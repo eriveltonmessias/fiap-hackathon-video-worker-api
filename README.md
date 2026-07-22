@@ -19,6 +19,7 @@ A primeira estrutura inclui:
 - download e upload por streaming, sem materializar arquivos temporarios no adapter;
 - inicializacao idempotente dos buckets de entrada e saida;
 - consumo validado e idempotente de `VideoProcessingRequested` pelo Kafka;
+- extracao segura de frames JPEG com FFmpeg, timeout e limite de frames;
 - separacao entre dominio, aplicacao e infraestrutura.
 
 O processamento e os adapters serao adicionados em cortes pequenos, com uma
@@ -49,7 +50,8 @@ nao aceitam novas transicoes.
 ## Requisitos
 
 - Java 21
-- Docker para os testes de integracao das proximas etapas
+- Docker para os testes de integracao
+- FFmpeg disponivel no `PATH`
 
 Nao e necessario instalar Gradle globalmente.
 
@@ -74,8 +76,8 @@ Execute o worker:
 ./gradlew bootRun
 ```
 
-A aplicacao usa a porta `8083`. Neste primeiro corte, ela ainda nao possui
-consumer Kafka e inicia mesmo quando as dependencias locais estao indisponiveis.
+A aplicacao usa a porta `8083`. O consumer Kafka inicia por padrao e aguarda as
+dependencias locais quando elas estiverem indisponiveis.
 
 ```bash
 curl http://localhost:8083/actuator/health/liveness
@@ -91,6 +93,10 @@ curl http://localhost:8083/actuator/health/readiness
 | `MONGODB_URI` | `mongodb://localhost:27017/video_worker_db` |
 | `KAFKA_BOOTSTRAP_SERVERS` | `localhost:9092` |
 | `KAFKA_PROCESSING_REQUESTS_GROUP_ID` | `video-worker-processing-requests` |
+| `FFMPEG_EXECUTABLE` | `ffmpeg` |
+| `FFMPEG_TIMEOUT` | `5m` |
+| `FFMPEG_FRAMES_PER_SECOND` | `1` |
+| `FFMPEG_MAX_FRAMES` | `10000` |
 | `MINIO_ENDPOINT` | `http://localhost:9000` |
 | `MINIO_ACCESS_KEY` | `fiapx` |
 | `MINIO_SECRET_KEY` | `fiapx12345` |

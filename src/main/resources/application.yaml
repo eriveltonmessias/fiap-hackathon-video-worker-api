@@ -31,6 +31,11 @@ logging:
       console: ecs
 
 app:
+  ffmpeg:
+    executable: ${FFMPEG_EXECUTABLE:ffmpeg}
+    timeout: ${FFMPEG_TIMEOUT:5m}
+    frames-per-second: ${FFMPEG_FRAMES_PER_SECOND:1}
+    max-frames: ${FFMPEG_MAX_FRAMES:10000}
   storage:
     minio:
       endpoint: ${MINIO_ENDPOINT:http://localhost:9000}
