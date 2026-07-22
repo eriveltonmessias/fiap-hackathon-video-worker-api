@@ -37,6 +37,7 @@ app:
       secret-key: ${MINIO_SECRET_KEY:fiapx12345}
       input-bucket: ${MINIO_INPUT_BUCKET:fiapx-videos-input}
       output-bucket: ${MINIO_OUTPUT_BUCKET:fiapx-videos-output}
+      initialize-buckets: ${MINIO_INITIALIZE_BUCKETS:true}
 
 server:
   port: ${SERVER_PORT:8083}
