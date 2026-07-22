@@ -20,7 +20,7 @@ class ProcessingRequestKafkaListener(
 	@KafkaListener(topics = [VideoProcessingRequested.TOPIC])
 	fun consume(record: ConsumerRecord<String, String>) {
 		val request = parse(record)
-		if (handler.handle(request) == ProcessingRequestResult.REGISTERED) {
+		if (handler.handle(request) != ProcessingRequestResult.ALREADY_REGISTERED) {
 			videoProcessor.process(request.videoId)
 		}
 	}
