@@ -14,8 +14,8 @@ A primeira estrutura inclui:
 - configuracoes externas por variaveis de ambiente;
 - separacao planejada entre dominio, aplicacao e infraestrutura.
 
-O processamento e os adapters serao adicionados em cortes pequenos conforme
-[docs/development-plan.md](docs/development-plan.md).
+O processamento e os adapters serao adicionados em cortes pequenos, com uma
+branch e validacao independente para cada etapa.
 
 ## Arquitetura
 
