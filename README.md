@@ -15,6 +15,7 @@ A primeira estrutura inclui:
 - agregado `VideoProcessingJob` sem dependencias de framework;
 - ciclo interno do processamento com invariantes e estados terminais;
 - UUID direto para identificadores e VOs somente para valores que exigem validacao;
+- persistencia MongoDB com indices unicos por video e evento de entrada;
 - separacao entre dominio, aplicacao e infraestrutura.
 
 O processamento e os adapters serao adicionados em cortes pequenos, com uma
@@ -58,7 +59,13 @@ Nao e necessario instalar Gradle globalmente.
 
 ## Executar
 
-Com MongoDB, Kafka e MinIO disponiveis nas portas locais padrao:
+Inicie o MongoDB local:
+
+```bash
+docker compose up -d mongo-worker
+```
+
+Com Kafka e MinIO tambem disponiveis nas portas locais padrao:
 
 ```bash
 ./gradlew bootRun
