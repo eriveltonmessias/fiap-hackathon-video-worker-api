@@ -4,6 +4,7 @@ import com.fiap.hackathon.videoworkerapi.domain.processing.FailureReason
 import com.fiap.hackathon.videoworkerapi.domain.processing.ObjectKey
 import com.fiap.hackathon.videoworkerapi.domain.processing.OriginalFilename
 import com.fiap.hackathon.videoworkerapi.domain.processing.ProcessingJobStatus
+import com.fiap.hackathon.videoworkerapi.domain.processing.ProcessingResultOutbox
 import com.fiap.hackathon.videoworkerapi.domain.processing.VideoProcessingJob
 import org.springframework.data.annotation.Id
 import org.springframework.data.mongodb.core.index.Indexed
@@ -25,12 +26,19 @@ data class MongoProcessingJobDocument(
 	val status: ProcessingJobStatus,
 	val outputObjectKey: String?,
 	val failureReason: String?,
+	val resultOutbox: MongoProcessingResultOutboxDocument?,
 	val frameCount: Int?,
 	val attempts: Int,
 	val createdAt: Instant,
 	val startedAt: Instant?,
 	val finishedAt: Instant?,
 	val updatedAt: Instant,
+)
+
+data class MongoProcessingResultOutboxDocument(
+	val eventId: UUID,
+	val occurredAt: Instant,
+	val publishedAt: Instant?,
 )
 
 fun VideoProcessingJob.toDocument(): MongoProcessingJobDocument = MongoProcessingJobDocument(
@@ -43,6 +51,9 @@ fun VideoProcessingJob.toDocument(): MongoProcessingJobDocument = MongoProcessin
 	status = status,
 	outputObjectKey = outputObjectKey?.value,
 	failureReason = failureReason?.value,
+	resultOutbox = resultOutbox?.let {
+		MongoProcessingResultOutboxDocument(it.eventId, it.occurredAt, it.publishedAt)
+	},
 	frameCount = frameCount,
 	attempts = attempts,
 	createdAt = createdAt,
@@ -61,6 +72,13 @@ fun MongoProcessingJobDocument.toDomain(): VideoProcessingJob = VideoProcessingJ
 	status = status,
 	outputObjectKey = outputObjectKey?.let(ObjectKey::of),
 	failureReason = failureReason?.let(FailureReason::of),
+	resultOutbox = resultOutbox?.let {
+		ProcessingResultOutbox.restore(
+			it.eventId,
+			it.occurredAt,
+			it.publishedAt,
+		)
+	},
 	frameCount = frameCount,
 	attempts = attempts,
 	createdAt = createdAt,

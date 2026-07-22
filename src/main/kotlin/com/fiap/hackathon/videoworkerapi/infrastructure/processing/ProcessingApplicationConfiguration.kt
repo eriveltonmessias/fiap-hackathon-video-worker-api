@@ -6,6 +6,7 @@ import com.fiap.hackathon.videoworkerapi.application.processing.FrameExtractor
 import com.fiap.hackathon.videoworkerapi.application.processing.HandleVideoProcessingRequest
 import com.fiap.hackathon.videoworkerapi.application.processing.ProcessingJobIdGenerator
 import com.fiap.hackathon.videoworkerapi.application.processing.ProcessingJobRepository
+import com.fiap.hackathon.videoworkerapi.application.processing.ProcessingResultEventIdGenerator
 import com.fiap.hackathon.videoworkerapi.application.processing.VideoProcessor
 import com.fiap.hackathon.videoworkerapi.application.processing.VideoStorage
 import org.springframework.boot.context.properties.ConfigurationProperties
@@ -26,6 +27,10 @@ class ProcessingApplicationConfiguration {
 	fun processingJobIdGenerator(): ProcessingJobIdGenerator = ProcessingJobIdGenerator(UUID::randomUUID)
 
 	@Bean
+	fun processingResultEventIdGenerator(): ProcessingResultEventIdGenerator =
+		ProcessingResultEventIdGenerator(UUID::randomUUID)
+
+	@Bean
 	fun handleVideoProcessingRequest(
 		repository: ProcessingJobRepository,
 		idGenerator: ProcessingJobIdGenerator,
@@ -42,6 +47,7 @@ class ProcessingApplicationConfiguration {
 		frameArchiver: FrameArchiver,
 		processingClock: Clock,
 		processingProperties: ProcessingProperties,
+		resultEventIdGenerator: ProcessingResultEventIdGenerator,
 	): VideoProcessor = DefaultVideoProcessor(
 		repository = repository,
 		storage = storage,
@@ -49,5 +55,6 @@ class ProcessingApplicationConfiguration {
 		frameArchiver = frameArchiver,
 		clock = processingClock,
 		temporaryDirectory = processingProperties.temporaryDirectory,
+		resultEventIdGenerator = resultEventIdGenerator,
 	)
 }

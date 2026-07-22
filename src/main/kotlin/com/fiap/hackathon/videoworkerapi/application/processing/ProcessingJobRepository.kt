@@ -11,4 +11,6 @@ interface ProcessingJobRepository {
 	fun findByVideoId(videoId: UUID): VideoProcessingJob?
 
 	fun findByRequestEventId(requestEventId: UUID): VideoProcessingJob?
+
+	fun findPendingResults(limit: Int): List<VideoProcessingJob>
 }

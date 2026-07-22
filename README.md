@@ -22,6 +22,7 @@ A primeira estrutura inclui:
 - extracao segura de frames JPEG com FFmpeg, timeout e limite de frames;
 - compactacao ZIP nativa com todos os frames extraidos;
 - pipeline completo com download, transicoes persistidas, upload e limpeza temporaria;
+- outbox persistido com o job e publicacao confirmada pelo Kafka;
 - separacao entre dominio, aplicacao e infraestrutura.
 
 O processamento e os adapters serao adicionados em cortes pequenos, com uma
@@ -48,6 +49,15 @@ RECEIVED -> PROCESSING -> GENERATING_FRAMES -> COMPRESSING
 
 Qualquer estado nao terminal pode finalizar em `FAILED`. `COMPLETED` e `FAILED`
 nao aceitam novas transicoes.
+
+Resultados sao publicados com chave Kafka igual ao `videoId`:
+
+- `VideoProcessed` no topico `video.processing.completed`;
+- `VideoProcessingFailed` no topico `video.processing.failed`.
+
+O mesmo `eventId` pode ser publicado novamente se o ACK do Kafka ocorrer antes
+da confirmacao no MongoDB. Consumidores devem tratar esse identificador de forma
+idempotente.
 
 ## Requisitos
 
@@ -95,6 +105,11 @@ curl http://localhost:8083/actuator/health/readiness
 | `MONGODB_URI` | `mongodb://localhost:27017/video_worker_db` |
 | `KAFKA_BOOTSTRAP_SERVERS` | `localhost:9092` |
 | `KAFKA_PROCESSING_REQUESTS_GROUP_ID` | `video-worker-processing-requests` |
+| `OUTBOX_SCHEDULING_ENABLED` | `true` |
+| `OUTBOX_INITIAL_DELAY` | `5s` |
+| `OUTBOX_FIXED_DELAY` | `5s` |
+| `OUTBOX_BATCH_SIZE` | `100` |
+| `OUTBOX_PUBLISH_TIMEOUT` | `10s` |
 | `PROCESSING_TEMP_DIRECTORY` | diretorio temporario da JVM |
 | `FFMPEG_EXECUTABLE` | `ffmpeg` |
 | `FFMPEG_TIMEOUT` | `5m` |

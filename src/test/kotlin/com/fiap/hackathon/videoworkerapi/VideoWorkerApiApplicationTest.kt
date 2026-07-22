@@ -10,6 +10,7 @@ import org.springframework.boot.test.context.SpringBootTest
 		"spring.data.mongodb.auto-index-creation=false",
 		"app.storage.minio.initialize-buckets=false",
 		"spring.kafka.listener.auto-startup=false",
+		"app.outbox.scheduling-enabled=false",
 	],
 )
 class VideoWorkerApiApplicationTest {

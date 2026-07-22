@@ -15,6 +15,7 @@ class VideoProcessingJobTest {
 	private val requestEventId = UUID.fromString("86467e08-c764-413f-9857-75314e3fe607")
 	private val videoId = UUID.fromString("5a7ff337-81a3-4f75-b93f-e43f1fc0441f")
 	private val customerId = UUID.fromString("c3049024-0dbe-4cb0-aa7f-7e74dfe0ebfc")
+	private val resultEventId = UUID.fromString("ef2ec18e-9c74-4613-bf03-0a8ab1a762f1")
 
 	@Test
 	fun `receives a processing job`() {
@@ -58,12 +59,14 @@ class VideoProcessingJobTest {
 		assertEquals(ProcessingJobStatus.UPLOADING_RESULT, job.status)
 
 		val outputKey = ObjectKey.of("customers/$customerId/videos/$videoId/output/frames.zip")
-		job.complete(outputKey, receivedAt.plusSeconds(5))
+		job.complete(outputKey, resultEventId, receivedAt.plusSeconds(5))
 
 		assertEquals(ProcessingJobStatus.COMPLETED, job.status)
 		assertEquals(outputKey, job.outputObjectKey)
 		assertEquals(receivedAt.plusSeconds(5), job.finishedAt)
 		assertEquals(receivedAt.plusSeconds(5), job.updatedAt)
+		assertEquals(resultEventId, job.resultOutbox?.eventId)
+		assertTrue(requireNotNull(job.resultOutbox).isPending)
 		assertTrue(job.isTerminal())
 	}
 
@@ -74,7 +77,7 @@ class VideoProcessingJobTest {
 		job.markGeneratingFrames(receivedAt.plusSeconds(2))
 		val reason = FailureReason.of(" Decoder unavailable ")
 
-		job.fail(reason, receivedAt.plusSeconds(3))
+		job.fail(reason, resultEventId, receivedAt.plusSeconds(3))
 
 		assertEquals(ProcessingJobStatus.FAILED, job.status)
 		assertEquals("Decoder unavailable", job.failureReason?.value)
@@ -87,7 +90,7 @@ class VideoProcessingJobTest {
 	fun `allows failure before processing starts`() {
 		val job = newJob()
 
-		job.fail(FailureReason.of("Invalid processing request"), receivedAt.plusSeconds(1))
+		job.fail(FailureReason.of("Invalid processing request"), resultEventId, receivedAt.plusSeconds(1))
 
 		assertEquals(ProcessingJobStatus.FAILED, job.status)
 		assertEquals(0, job.attempts)
@@ -140,11 +143,11 @@ class VideoProcessingJobTest {
 	fun `terminal jobs reject further transitions`() {
 		val completed = completedJob()
 		val failed = newJob().also {
-			it.fail(FailureReason.of("Permanent failure"), receivedAt.plusSeconds(1))
+			it.fail(FailureReason.of("Permanent failure"), resultEventId, receivedAt.plusSeconds(1))
 		}
 
 		assertFailsWith<IllegalStateException> {
-			completed.fail(FailureReason.of("Late failure"), receivedAt.plusSeconds(6))
+			completed.fail(FailureReason.of("Late failure"), resultEventId, receivedAt.plusSeconds(6))
 		}
 		assertFailsWith<IllegalStateException> {
 			failed.start(receivedAt.plusSeconds(2))
@@ -168,6 +171,7 @@ class VideoProcessingJobTest {
 			status = ProcessingJobStatus.COMPLETED,
 			outputObjectKey = outputKey,
 			failureReason = null,
+			resultOutbox = ProcessingResultOutbox.pending(resultEventId, receivedAt.plusSeconds(5)),
 			frameCount = 12,
 			attempts = 1,
 			createdAt = receivedAt,
@@ -194,6 +198,7 @@ class VideoProcessingJobTest {
 				status = ProcessingJobStatus.COMPLETED,
 				outputObjectKey = null,
 				failureReason = null,
+				resultOutbox = ProcessingResultOutbox.pending(resultEventId, receivedAt.plusSeconds(5)),
 				frameCount = 12,
 				attempts = 1,
 				createdAt = receivedAt,
@@ -217,6 +222,7 @@ class VideoProcessingJobTest {
 				status = ProcessingJobStatus.FAILED,
 				outputObjectKey = null,
 				failureReason = FailureReason.of("Invalid request"),
+				resultOutbox = ProcessingResultOutbox.pending(resultEventId, receivedAt.plusSeconds(1)),
 				frameCount = 12,
 				attempts = 0,
 				createdAt = receivedAt,
@@ -234,6 +240,7 @@ class VideoProcessingJobTest {
 		it.markUploadingResult(receivedAt.plusSeconds(4))
 		it.complete(
 			ObjectKey.of("customers/$customerId/videos/$videoId/output/frames.zip"),
+			resultEventId,
 			receivedAt.plusSeconds(5),
 		)
 	}

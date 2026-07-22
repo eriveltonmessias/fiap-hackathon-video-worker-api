@@ -39,6 +39,7 @@ import kotlin.test.assertTrue
 		"management.server.port=-1",
 		"spring.kafka.listener.auto-startup=false",
 		"app.ffmpeg.max-frames=3",
+		"app.outbox.scheduling-enabled=false",
 	],
 )
 @Import(MongoTestcontainersConfiguration::class, MinioTestcontainersConfiguration::class)

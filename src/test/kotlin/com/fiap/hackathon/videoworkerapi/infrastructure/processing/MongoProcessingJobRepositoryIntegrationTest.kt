@@ -18,6 +18,7 @@ import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
 import kotlin.test.assertFalse
 import kotlin.test.assertNull
+import kotlin.test.assertTrue
 
 @SpringBootTest(
 	webEnvironment = SpringBootTest.WebEnvironment.NONE,
@@ -25,6 +26,7 @@ import kotlin.test.assertNull
 		"management.server.port=-1",
 		"app.storage.minio.initialize-buckets=false",
 		"spring.kafka.listener.auto-startup=false",
+		"app.outbox.scheduling-enabled=false",
 	],
 )
 @Import(MongoTestcontainersConfiguration::class)
@@ -51,6 +53,19 @@ class MongoProcessingJobRepositoryIntegrationTest {
 		assertJobEquals(job, saved)
 		assertJobEquals(job, requireNotNull(byVideo))
 		assertJobEquals(job, requireNotNull(byEvent))
+	}
+
+	@Test
+	fun `finds pending result and removes it from query after publication confirmation`() {
+		val job = completedJob()
+		processingJobRepository.save(job)
+
+		assertEquals(listOf(job.id), processingJobRepository.findPendingResults(10).map { it.id })
+
+		job.markResultPublished(RECEIVED_AT.plusSeconds(6))
+		processingJobRepository.save(job)
+
+		assertTrue(processingJobRepository.findPendingResults(10).isEmpty())
 	}
 
 	@Test
@@ -96,7 +111,11 @@ class MongoProcessingJobRepositoryIntegrationTest {
 		it.markGeneratingFrames(RECEIVED_AT.plusSeconds(2))
 		it.markCompressing(24, RECEIVED_AT.plusSeconds(3))
 		it.markUploadingResult(RECEIVED_AT.plusSeconds(4))
-		it.complete(ObjectKey.of("customers/$CUSTOMER_ID/videos/$VIDEO_ID/output/frames.zip"), RECEIVED_AT.plusSeconds(5))
+		it.complete(
+			ObjectKey.of("customers/$CUSTOMER_ID/videos/$VIDEO_ID/output/frames.zip"),
+			RESULT_EVENT_ID,
+			RECEIVED_AT.plusSeconds(5),
+		)
 	}
 
 	private fun newJob(
@@ -123,6 +142,7 @@ class MongoProcessingJobRepositoryIntegrationTest {
 		assertEquals(expected.status, actual.status)
 		assertEquals(expected.outputObjectKey, actual.outputObjectKey)
 		assertEquals(expected.failureReason, actual.failureReason)
+		assertEquals(expected.resultOutbox, actual.resultOutbox)
 		assertEquals(expected.frameCount, actual.frameCount)
 		assertEquals(expected.attempts, actual.attempts)
 		assertEquals(expected.createdAt, actual.createdAt)
@@ -138,5 +158,6 @@ class MongoProcessingJobRepositoryIntegrationTest {
 		val REQUEST_EVENT_ID: UUID = UUID.fromString("86467e08-c764-413f-9857-75314e3fe607")
 		val VIDEO_ID: UUID = UUID.fromString("5a7ff337-81a3-4f75-b93f-e43f1fc0441f")
 		val CUSTOMER_ID: UUID = UUID.fromString("c3049024-0dbe-4cb0-aa7f-7e74dfe0ebfc")
+		val RESULT_EVENT_ID: UUID = UUID.fromString("ef2ec18e-9c74-4613-bf03-0a8ab1a762f1")
 	}
 }
