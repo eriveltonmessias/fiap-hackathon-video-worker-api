@@ -1,0 +1,59 @@
+spring:
+  application:
+    name: video-worker-api
+  lifecycle:
+    timeout-per-shutdown-phase: ${SHUTDOWN_TIMEOUT:30s}
+  data:
+    mongodb:
+      uri: ${MONGODB_URI:mongodb://localhost:27017/video_worker_db}
+  kafka:
+    bootstrap-servers: ${KAFKA_BOOTSTRAP_SERVERS:localhost:9092}
+    consumer:
+      group-id: ${KAFKA_PROCESSING_REQUESTS_GROUP_ID:video-worker-processing-requests}
+      auto-offset-reset: earliest
+      enable-auto-commit: false
+      key-deserializer: org.apache.kafka.common.serialization.StringDeserializer
+      value-deserializer: org.apache.kafka.common.serialization.StringDeserializer
+    listener:
+      ack-mode: record
+    producer:
+      acks: all
+      key-serializer: org.apache.kafka.common.serialization.StringSerializer
+      value-serializer: org.apache.kafka.common.serialization.StringSerializer
+      properties:
+        enable.idempotence: true
+
+logging:
+  structured:
+    format:
+      console: ecs
+
+app:
+  storage:
+    minio:
+      endpoint: ${MINIO_ENDPOINT:http://localhost:9000}
+      access-key: ${MINIO_ACCESS_KEY:fiapx}
+      secret-key: ${MINIO_SECRET_KEY:fiapx12345}
+      input-bucket: ${MINIO_INPUT_BUCKET:fiapx-videos-input}
+      output-bucket: ${MINIO_OUTPUT_BUCKET:fiapx-videos-output}
+
+server:
+  port: ${SERVER_PORT:8083}
+  shutdown: graceful
+
+management:
+  server:
+    port: ${MANAGEMENT_SERVER_PORT:${SERVER_PORT:8083}}
+  endpoints:
+    web:
+      exposure:
+        include: health,info,prometheus
+  endpoint:
+    health:
+      probes:
+        enabled: true
+      group:
+        liveness:
+          include: livenessState
+        readiness:
+          include: readinessState
