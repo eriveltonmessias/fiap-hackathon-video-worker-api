@@ -3,17 +3,22 @@ package com.fiap.hackathon.videoworkerapi.infrastructure.processing
 import com.fiap.hackathon.videoworkerapi.KafkaTestcontainersConfiguration
 import com.fiap.hackathon.videoworkerapi.MongoTestcontainersConfiguration
 import com.fiap.hackathon.videoworkerapi.application.processing.ProcessingJobRepository
+import com.fiap.hackathon.videoworkerapi.application.processing.VideoProcessor
 import org.apache.kafka.clients.consumer.ConsumerRecord
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
 import org.springframework.beans.factory.annotation.Autowired
 import org.springframework.boot.test.context.SpringBootTest
+import org.springframework.boot.test.context.TestConfiguration
+import org.springframework.context.annotation.Bean
 import org.springframework.context.annotation.Import
+import org.springframework.context.annotation.Primary
 import org.springframework.kafka.core.KafkaTemplate
 import tools.jackson.databind.ObjectMapper
 import java.time.Duration
 import java.time.Instant
 import java.util.UUID
+import java.util.concurrent.CopyOnWriteArrayList
 import kotlin.test.assertEquals
 import kotlin.test.assertNotNull
 import kotlin.test.assertNull
@@ -25,17 +30,23 @@ import kotlin.test.assertNull
 		"app.storage.minio.initialize-buckets=false",
 	],
 )
-@Import(MongoTestcontainersConfiguration::class, KafkaTestcontainersConfiguration::class)
+@Import(
+	MongoTestcontainersConfiguration::class,
+	KafkaTestcontainersConfiguration::class,
+	StubVideoProcessorConfiguration::class,
+)
 class ProcessingRequestKafkaIntegrationTest(
 	@Autowired private val kafkaTemplate: KafkaTemplate<String, String>,
 	@Autowired private val objectMapper: ObjectMapper,
 	@Autowired private val repository: ProcessingJobRepository,
 	@Autowired private val springDataRepository: SpringDataProcessingJobRepository,
 	@Autowired private val listener: ProcessingRequestKafkaListener,
+	@Autowired private val videoProcessor: RecordingVideoProcessor,
 ) {
 	@BeforeEach
 	fun cleanDatabase() {
 		springDataRepository.deleteAll()
+		videoProcessor.processedVideoIds.clear()
 	}
 
 	@Test
@@ -53,6 +64,7 @@ class ProcessingRequestKafkaIntegrationTest(
 		assertEquals(event.customerId, job.customerId)
 		assertEquals(event.originalFilename, job.originalFilename.value)
 		assertEquals(event.inputObjectKey, job.inputObjectKey.value)
+		assertEquals(listOf(event.videoId), videoProcessor.processedVideoIds)
 	}
 
 	@Test
@@ -65,6 +77,7 @@ class ProcessingRequestKafkaIntegrationTest(
 
 		assertEquals(1L, springDataRepository.count())
 		assertEquals(event.eventId, repository.findByVideoId(event.videoId)?.requestEventId)
+		assertEquals(listOf(event.videoId), videoProcessor.processedVideoIds)
 	}
 
 	@Test
@@ -139,5 +152,20 @@ class ProcessingRequestKafkaIntegrationTest(
 			Thread.sleep(100)
 		}
 		return null
+	}
+}
+
+@TestConfiguration(proxyBeanMethods = false)
+class StubVideoProcessorConfiguration {
+	@Bean
+	@Primary
+	fun recordingVideoProcessor(): RecordingVideoProcessor = RecordingVideoProcessor()
+}
+
+class RecordingVideoProcessor : VideoProcessor {
+	val processedVideoIds = CopyOnWriteArrayList<UUID>()
+
+	override fun process(videoId: UUID) {
+		processedVideoIds.add(videoId)
 	}
 }

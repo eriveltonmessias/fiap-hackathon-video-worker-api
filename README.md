@@ -20,6 +20,8 @@ A primeira estrutura inclui:
 - inicializacao idempotente dos buckets de entrada e saida;
 - consumo validado e idempotente de `VideoProcessingRequested` pelo Kafka;
 - extracao segura de frames JPEG com FFmpeg, timeout e limite de frames;
+- compactacao ZIP nativa com todos os frames extraidos;
+- pipeline completo com download, transicoes persistidas, upload e limpeza temporaria;
 - separacao entre dominio, aplicacao e infraestrutura.
 
 O processamento e os adapters serao adicionados em cortes pequenos, com uma
@@ -93,6 +95,7 @@ curl http://localhost:8083/actuator/health/readiness
 | `MONGODB_URI` | `mongodb://localhost:27017/video_worker_db` |
 | `KAFKA_BOOTSTRAP_SERVERS` | `localhost:9092` |
 | `KAFKA_PROCESSING_REQUESTS_GROUP_ID` | `video-worker-processing-requests` |
+| `PROCESSING_TEMP_DIRECTORY` | diretorio temporario da JVM |
 | `FFMPEG_EXECUTABLE` | `ffmpeg` |
 | `FFMPEG_TIMEOUT` | `5m` |
 | `FFMPEG_FRAMES_PER_SECOND` | `1` |
@@ -106,4 +109,5 @@ curl http://localhost:8083/actuator/health/readiness
 | `SHUTDOWN_TIMEOUT` | `30s` |
 
 Os valores sao somente para desenvolvimento local. No EKS, credenciais devem
-vir de Kubernetes Secrets ou de um gerenciador externo.
+vir de Kubernetes Secrets ou de um gerenciador externo. O diretorio temporario
+pode apontar para um volume `emptyDir` com limite de armazenamento definido.
