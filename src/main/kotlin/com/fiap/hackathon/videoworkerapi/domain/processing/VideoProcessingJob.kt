@@ -13,6 +13,7 @@ class VideoProcessingJob private constructor(
 	status: ProcessingJobStatus,
 	outputObjectKey: ObjectKey?,
 	failureReason: FailureReason?,
+	resultOutbox: ProcessingResultOutbox?,
 	frameCount: Int?,
 	attempts: Int,
 	val createdAt: Instant,
@@ -27,6 +28,9 @@ class VideoProcessingJob private constructor(
 		private set
 
 	var failureReason: FailureReason? = failureReason
+		private set
+
+	var resultOutbox: ProcessingResultOutbox? = resultOutbox
 		private set
 
 	var frameCount: Int? = frameCount
@@ -74,22 +78,29 @@ class VideoProcessingJob private constructor(
 		transition(ProcessingJobStatus.COMPRESSING, ProcessingJobStatus.UPLOADING_RESULT, changedAt)
 	}
 
-	fun complete(objectKey: ObjectKey, changedAt: Instant) {
+	fun complete(objectKey: ObjectKey, resultEventId: UUID, changedAt: Instant) {
 		ensureStatus(ProcessingJobStatus.UPLOADING_RESULT)
 		ensureChangedAt(changedAt)
 		outputObjectKey = objectKey
 		status = ProcessingJobStatus.COMPLETED
 		finishedAt = changedAt
 		updatedAt = changedAt
+		resultOutbox = ProcessingResultOutbox.pending(resultEventId, changedAt)
 	}
 
-	fun fail(reason: FailureReason, changedAt: Instant) {
+	fun fail(reason: FailureReason, resultEventId: UUID, changedAt: Instant) {
 		check(!isTerminal()) { "Job in status $status cannot transition to FAILED" }
 		ensureChangedAt(changedAt)
 		failureReason = reason
 		status = ProcessingJobStatus.FAILED
 		finishedAt = changedAt
 		updatedAt = changedAt
+		resultOutbox = ProcessingResultOutbox.pending(resultEventId, changedAt)
+	}
+
+	fun markResultPublished(publishedAt: Instant) {
+		check(isTerminal()) { "Only a terminal job can publish a result" }
+		resultOutbox = checkNotNull(resultOutbox).markPublished(publishedAt)
 	}
 
 	fun isTerminal(): Boolean = status == ProcessingJobStatus.COMPLETED || status == ProcessingJobStatus.FAILED
@@ -125,6 +136,10 @@ class VideoProcessingJob private constructor(
 		require(finishedAt == null || finishedAt == updatedAt) { "finishedAt must match updatedAt" }
 		require((attempts == 0) == (startedAt == null)) { "attempts and startedAt must be consistent" }
 		require(frameCount == null || startedAt != null) { "frameCount requires a started job" }
+		require(resultOutbox == null || isTerminal()) { "Only a terminal job can have a result outbox" }
+		require(resultOutbox == null || resultOutbox!!.occurredAt == finishedAt) {
+			"Result occurredAt must match finishedAt"
+		}
 
 		when (status) {
 			ProcessingJobStatus.RECEIVED -> {
@@ -154,12 +169,14 @@ class VideoProcessingJob private constructor(
 				require(outputObjectKey != null) { "COMPLETED job must have an output object key" }
 				require(failureReason == null) { "COMPLETED job must not have a failure reason" }
 				require(finishedAt != null) { "COMPLETED job must have finishedAt" }
+				require(resultOutbox != null) { "COMPLETED job must have a result outbox" }
 			}
 
 			ProcessingJobStatus.FAILED -> {
 				require(outputObjectKey == null) { "FAILED job must not have an output object key" }
 				require(failureReason != null) { "FAILED job must have a failure reason" }
 				require(finishedAt != null) { "FAILED job must have finishedAt" }
+				require(resultOutbox != null) { "FAILED job must have a result outbox" }
 			}
 		}
 	}
@@ -193,6 +210,7 @@ class VideoProcessingJob private constructor(
 			status = ProcessingJobStatus.RECEIVED,
 			outputObjectKey = null,
 			failureReason = null,
+			resultOutbox = null,
 			frameCount = null,
 			attempts = 0,
 			createdAt = receivedAt,
@@ -212,6 +230,7 @@ class VideoProcessingJob private constructor(
 			status: ProcessingJobStatus,
 			outputObjectKey: ObjectKey?,
 			failureReason: FailureReason?,
+			resultOutbox: ProcessingResultOutbox?,
 			frameCount: Int?,
 			attempts: Int,
 			createdAt: Instant,
@@ -228,6 +247,7 @@ class VideoProcessingJob private constructor(
 			status = status,
 			outputObjectKey = outputObjectKey,
 			failureReason = failureReason,
+			resultOutbox = resultOutbox,
 			frameCount = frameCount,
 			attempts = attempts,
 			createdAt = createdAt,

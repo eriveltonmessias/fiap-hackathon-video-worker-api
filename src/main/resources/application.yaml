@@ -31,6 +31,12 @@ logging:
       console: ecs
 
 app:
+  outbox:
+    scheduling-enabled: ${OUTBOX_SCHEDULING_ENABLED:true}
+    initial-delay: ${OUTBOX_INITIAL_DELAY:5s}
+    fixed-delay: ${OUTBOX_FIXED_DELAY:5s}
+    batch-size: ${OUTBOX_BATCH_SIZE:100}
+    publish-timeout: ${OUTBOX_PUBLISH_TIMEOUT:10s}
   processing:
     temporary-directory: ${PROCESSING_TEMP_DIRECTORY:${java.io.tmpdir}}
   ffmpeg:

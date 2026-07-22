@@ -67,4 +67,6 @@ private class InMemoryProcessingJobRepository : ProcessingJobRepository {
 
 	override fun findByRequestEventId(requestEventId: UUID): VideoProcessingJob? =
 		jobs.find { it.requestEventId == requestEventId }
+
+	override fun findPendingResults(limit: Int): List<VideoProcessingJob> = emptyList()
 }

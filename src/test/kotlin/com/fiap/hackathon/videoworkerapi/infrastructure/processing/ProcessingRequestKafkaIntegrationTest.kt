@@ -28,6 +28,7 @@ import kotlin.test.assertNull
 	properties = [
 		"management.server.port=-1",
 		"app.storage.minio.initialize-buckets=false",
+		"app.outbox.scheduling-enabled=false",
 	],
 )
 @Import(

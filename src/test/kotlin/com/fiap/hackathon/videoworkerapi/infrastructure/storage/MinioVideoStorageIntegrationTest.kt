@@ -25,6 +25,7 @@ import kotlin.test.assertTrue
 		"management.server.port=-1",
 		"spring.data.mongodb.auto-index-creation=false",
 		"spring.kafka.listener.auto-startup=false",
+		"app.outbox.scheduling-enabled=false",
 	],
 )
 @Import(MinioTestcontainersConfiguration::class)

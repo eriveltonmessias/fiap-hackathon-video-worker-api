@@ -89,6 +89,9 @@ class DefaultVideoProcessorTest {
 		frameArchiver = ZipFrameArchiver(),
 		clock = Clock.fixed(receivedAt.plusSeconds(10), ZoneOffset.UTC),
 		temporaryDirectory = temporaryDirectory,
+		resultEventIdGenerator = ProcessingResultEventIdGenerator {
+			UUID.fromString("ef2ec18e-9c74-4613-bf03-0a8ab1a762f1")
+		},
 	)
 
 	private fun newJob(): VideoProcessingJob = VideoProcessingJob.receive(
@@ -134,6 +137,9 @@ private class RecordingProcessingJobRepository(
 
 	override fun findByRequestEventId(requestEventId: UUID): VideoProcessingJob? =
 		job.takeIf { it.requestEventId == requestEventId }
+
+	override fun findPendingResults(limit: Int): List<VideoProcessingJob> =
+		listOf(job).filter { it.resultOutbox?.isPending == true }.take(limit)
 }
 
 private class RecordingVideoStorage : VideoStorage {

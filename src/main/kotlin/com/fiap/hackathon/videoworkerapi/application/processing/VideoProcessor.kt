@@ -17,6 +17,10 @@ fun interface VideoProcessor {
 	fun process(videoId: UUID)
 }
 
+fun interface ProcessingResultEventIdGenerator {
+	fun generate(): UUID
+}
+
 class DefaultVideoProcessor(
 	private val repository: ProcessingJobRepository,
 	private val storage: VideoStorage,
@@ -24,6 +28,7 @@ class DefaultVideoProcessor(
 	private val frameArchiver: FrameArchiver,
 	private val clock: Clock,
 	private val temporaryDirectory: Path,
+	private val resultEventIdGenerator: ProcessingResultEventIdGenerator,
 ) : VideoProcessor {
 	override fun process(videoId: UUID) {
 		val job = requireNotNull(repository.findByVideoId(videoId)) { "Processing job was not found" }
@@ -59,10 +64,12 @@ class DefaultVideoProcessor(
 				)
 			}
 
-			transition(job) { changedAt -> job.complete(outputObjectKey, changedAt) }
+			transition(job) { changedAt ->
+				job.complete(outputObjectKey, resultEventIdGenerator.generate(), changedAt)
+			}
 		} catch (exception: Exception) {
 			val reason = failureReason(exception) ?: throw exception
-			job.fail(reason, nextTimestamp(job))
+			job.fail(reason, resultEventIdGenerator.generate(), nextTimestamp(job))
 			repository.save(job)
 		} finally {
 			workspace?.let(::deleteWorkspace)
