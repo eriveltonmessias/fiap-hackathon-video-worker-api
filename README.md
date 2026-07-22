@@ -16,6 +16,8 @@ A primeira estrutura inclui:
 - ciclo interno do processamento com invariantes e estados terminais;
 - UUID direto para identificadores e VOs somente para valores que exigem validacao;
 - persistencia MongoDB com indices unicos por video e evento de entrada;
+- download e upload por streaming, sem materializar arquivos temporarios no adapter;
+- inicializacao idempotente dos buckets de entrada e saida;
 - separacao entre dominio, aplicacao e infraestrutura.
 
 O processamento e os adapters serao adicionados em cortes pequenos, com uma
@@ -59,13 +61,13 @@ Nao e necessario instalar Gradle globalmente.
 
 ## Executar
 
-Inicie o MongoDB local:
+Inicie MongoDB e MinIO localmente:
 
 ```bash
-docker compose up -d mongo-worker
+docker compose up -d mongo-worker minio
 ```
 
-Com Kafka e MinIO tambem disponiveis nas portas locais padrao:
+Com Kafka tambem disponivel na porta local padrao:
 
 ```bash
 ./gradlew bootRun
@@ -93,6 +95,7 @@ curl http://localhost:8083/actuator/health/readiness
 | `MINIO_SECRET_KEY` | `fiapx12345` |
 | `MINIO_INPUT_BUCKET` | `fiapx-videos-input` |
 | `MINIO_OUTPUT_BUCKET` | `fiapx-videos-output` |
+| `MINIO_INITIALIZE_BUCKETS` | `true` |
 | `SHUTDOWN_TIMEOUT` | `30s` |
 
 Os valores sao somente para desenvolvimento local. No EKS, credenciais devem

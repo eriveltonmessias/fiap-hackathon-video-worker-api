@@ -20,7 +20,10 @@ import kotlin.test.assertNull
 
 @SpringBootTest(
 	webEnvironment = SpringBootTest.WebEnvironment.NONE,
-	properties = ["management.server.port=-1"],
+	properties = [
+		"management.server.port=-1",
+		"app.storage.minio.initialize-buckets=false",
+	],
 )
 @Import(MongoTestcontainersConfiguration::class)
 class MongoProcessingJobRepositoryIntegrationTest {

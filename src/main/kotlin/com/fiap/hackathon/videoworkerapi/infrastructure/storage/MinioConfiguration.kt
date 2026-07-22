@@ -15,6 +15,7 @@ data class MinioProperties(
 	@field:NotBlank val secretKey: String,
 	@field:NotBlank val inputBucket: String,
 	@field:NotBlank val outputBucket: String,
+	val initializeBuckets: Boolean = true,
 )
 
 @Configuration(proxyBeanMethods = false)
