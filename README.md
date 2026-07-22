@@ -12,7 +12,10 @@ A primeira estrutura inclui:
 - Actuator com liveness, readiness e Prometheus;
 - shutdown gracioso;
 - configuracoes externas por variaveis de ambiente;
-- separacao planejada entre dominio, aplicacao e infraestrutura.
+- agregado `VideoProcessingJob` sem dependencias de framework;
+- ciclo interno do processamento com invariantes e estados terminais;
+- UUID direto para identificadores e VOs somente para valores que exigem validacao;
+- separacao entre dominio, aplicacao e infraestrutura.
 
 O processamento e os adapters serao adicionados em cortes pequenos, com uma
 branch e validacao independente para cada etapa.
@@ -28,6 +31,16 @@ src/main/kotlin/com/fiap/hackathon/videoworkerapi/
 
 O dominio nao dependera de Spring. A aplicacao coordenara o fluxo, e a
 infraestrutura implementara as integracoes externas.
+
+O job controla o ciclo:
+
+```text
+RECEIVED -> PROCESSING -> GENERATING_FRAMES -> COMPRESSING
+         -> UPLOADING_RESULT -> COMPLETED
+```
+
+Qualquer estado nao terminal pode finalizar em `FAILED`. `COMPLETED` e `FAILED`
+nao aceitam novas transicoes.
 
 ## Requisitos
 
