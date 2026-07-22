@@ -18,6 +18,7 @@ A primeira estrutura inclui:
 - persistencia MongoDB com indices unicos por video e evento de entrada;
 - download e upload por streaming, sem materializar arquivos temporarios no adapter;
 - inicializacao idempotente dos buckets de entrada e saida;
+- consumo validado e idempotente de `VideoProcessingRequested` pelo Kafka;
 - separacao entre dominio, aplicacao e infraestrutura.
 
 O processamento e os adapters serao adicionados em cortes pequenos, com uma
@@ -61,13 +62,13 @@ Nao e necessario instalar Gradle globalmente.
 
 ## Executar
 
-Inicie MongoDB e MinIO localmente:
+Inicie MongoDB, MinIO e Kafka localmente:
 
 ```bash
-docker compose up -d mongo-worker minio
+docker compose up -d mongo-worker minio kafka
 ```
 
-Com Kafka tambem disponivel na porta local padrao:
+Execute o worker:
 
 ```bash
 ./gradlew bootRun

@@ -24,6 +24,7 @@ import kotlin.test.assertTrue
 	properties = [
 		"management.server.port=-1",
 		"spring.data.mongodb.auto-index-creation=false",
+		"spring.kafka.listener.auto-startup=false",
 	],
 )
 @Import(MinioTestcontainersConfiguration::class)

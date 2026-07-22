@@ -9,6 +9,7 @@ import org.springframework.boot.test.context.SpringBootTest
 		"management.server.port=0",
 		"spring.data.mongodb.auto-index-creation=false",
 		"app.storage.minio.initialize-buckets=false",
+		"spring.kafka.listener.auto-startup=false",
 	],
 )
 class VideoWorkerApiApplicationTest {
