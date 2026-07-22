@@ -16,6 +16,7 @@ import java.time.Instant
 import java.util.UUID
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
+import kotlin.test.assertFalse
 import kotlin.test.assertNull
 
 @SpringBootTest(
@@ -23,6 +24,7 @@ import kotlin.test.assertNull
 	properties = [
 		"management.server.port=-1",
 		"app.storage.minio.initialize-buckets=false",
+		"spring.kafka.listener.auto-startup=false",
 	],
 )
 @Import(MongoTestcontainersConfiguration::class)
@@ -77,6 +79,16 @@ class MongoProcessingJobRepositoryIntegrationTest {
 		assertFailsWith<DuplicateKeyException> {
 			processingJobRepository.save(duplicate)
 		}
+	}
+
+	@Test
+	fun `atomically declines duplicate job insertion`() {
+		val first = newJob()
+		assertEquals(true, processingJobRepository.saveIfAbsent(first))
+		val duplicate = newJob(id = UUID.randomUUID(), requestEventId = UUID.randomUUID())
+
+		assertFalse(processingJobRepository.saveIfAbsent(duplicate))
+		assertEquals(1L, springDataRepository.count())
 	}
 
 	private fun completedJob(): VideoProcessingJob = newJob().also {

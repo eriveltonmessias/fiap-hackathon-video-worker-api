@@ -6,6 +6,8 @@ import java.util.UUID
 interface ProcessingJobRepository {
 	fun save(job: VideoProcessingJob): VideoProcessingJob
 
+	fun saveIfAbsent(job: VideoProcessingJob): Boolean
+
 	fun findByVideoId(videoId: UUID): VideoProcessingJob?
 
 	fun findByRequestEventId(requestEventId: UUID): VideoProcessingJob?
