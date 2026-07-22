@@ -31,6 +31,8 @@ logging:
       console: ecs
 
 app:
+  processing:
+    temporary-directory: ${PROCESSING_TEMP_DIRECTORY:${java.io.tmpdir}}
   ffmpeg:
     executable: ${FFMPEG_EXECUTABLE:ffmpeg}
     timeout: ${FFMPEG_TIMEOUT:5m}
