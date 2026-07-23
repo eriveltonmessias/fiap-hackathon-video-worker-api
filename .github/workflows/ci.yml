@@ -1,0 +1,38 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Java 21
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "21"
+          cache: gradle
+
+      - name: Install FFmpeg
+        run: sudo apt-get update && sudo apt-get install --yes --no-install-recommends ffmpeg
+
+      - name: Build and test
+        run: ./gradlew build --no-daemon
+
+      - name: Build container image
+        run: docker build --tag video-worker-api:ci .
+
+      - name: Verify runtime image
+        run: |
+          docker run --rm --entrypoint sh video-worker-api:ci \
+            -c 'test "$(id -u)" -ne 0 && ffmpeg -version'

@@ -25,6 +25,8 @@ A primeira estrutura inclui:
 - outbox persistido com o job e publicacao confirmada pelo Kafka;
 - retry limitado para falhas transitorias e DLQ sanitizada para mensagens irrecuperaveis;
 - metricas Prometheus, logs ECS correlacionados e probes das dependencias;
+- fluxo E2E validado com Kafka, MongoDB, MinIO e FFmpeg reais;
+- imagem Java 21 com FFmpeg, usuario nao-root e pipeline de CI;
 - separacao entre dominio, aplicacao e infraestrutura.
 
 ## Arquitetura
@@ -74,7 +76,11 @@ Nao e necessario instalar Gradle globalmente.
 ./gradlew build
 ```
 
-## Executar
+Os testes de integracao usam Testcontainers. O teste E2E publica a solicitacao
+no Kafka e valida persistencia, ZIP no MinIO, eventos de sucesso e falha,
+idempotencia e limpeza dos arquivos temporarios.
+
+## Executar com Gradle
 
 Inicie MongoDB, MinIO e Kafka localmente:
 
@@ -95,6 +101,29 @@ dependencias locais quando elas estiverem indisponiveis.
 curl http://localhost:8083/actuator/health/liveness
 curl http://localhost:8083/actuator/health/readiness
 ```
+
+## Executar com Docker
+
+Para construir e iniciar o worker com todas as dependencias:
+
+```bash
+docker compose --profile app up --build
+```
+
+O `Dockerfile` usa build multi-stage. A imagem final contem Java 21 e FFmpeg,
+executa com UID/GID `10001` e grava arquivos transitorios somente em
+`/tmp/video-worker`.
+
+Para encerrar e remover os containers:
+
+```bash
+docker compose --profile app down
+```
+
+## Contratos
+
+Os payloads, topicos, chaves Kafka e regras de idempotencia estao documentados
+em [`docs/events.md`](docs/events.md).
 
 ## Variaveis
 
@@ -137,23 +166,17 @@ A liveness verifica apenas o estado interno da aplicacao. A readiness inclui
 MongoDB, Kafka e os buckets MinIO, evitando reiniciar o pod por uma dependencia
 temporariamente indisponivel.
 
-```yaml
-ports:
-  - name: management
-    containerPort: 8083
-livenessProbe:
-  httpGet:
-    path: /actuator/health/liveness
-    port: management
-  periodSeconds: 10
-  timeoutSeconds: 3
-readinessProbe:
-  httpGet:
-    path: /actuator/health/readiness
-    port: management
-  periodSeconds: 5
-  timeoutSeconds: 3
-terminationGracePeriodSeconds: 45
+O manifesto em [`deploy/kubernetes/deployment.yaml`](deploy/kubernetes/deployment.yaml)
+inclui probes, recursos, `emptyDir` limitado, contexto de seguranca nao-root e
+anotacoes para coleta Prometheus. Antes da aplicacao, ajuste a imagem e os
+enderecos do ConfigMap e crie o Secret esperado:
+
+```bash
+kubectl create secret generic video-worker-api \
+  --from-literal=mongodb-uri='<mongodb-uri>' \
+  --from-literal=minio-access-key='<access-key>' \
+  --from-literal=minio-secret-key='<secret-key>'
+kubectl apply -f deploy/kubernetes/deployment.yaml
 ```
 
 No `SIGTERM`, o listener Kafka para de buscar novas mensagens e aguarda o
@@ -171,3 +194,9 @@ O endpoint `/actuator/prometheus` expoe, entre outras, as metricas:
 
 Os logs usam o formato ECS e recebem `videoId` e `eventId` via MDC durante o
 consumo. Esses identificadores nao sao usados como tags de metricas.
+
+## Integracao continua
+
+O workflow `.github/workflows/ci.yml` roda em pushes e pull requests. Ele
+executa o build completo, constroi a imagem e confirma que o runtime possui
+FFmpeg e nao executa como root.
