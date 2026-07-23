@@ -1,6 +1,6 @@
 services:
   video-worker:
-    profiles: ["app", "flow"]
+    profiles: ["app"]
     build:
       context: .
     container_name: fiapx-video-worker
@@ -18,20 +18,6 @@ services:
       minio:
         condition: service_healthy
       mongo-worker:
-        condition: service_healthy
-
-  kafka-rest:
-    profiles: ["flow"]
-    image: confluentinc/cp-kafka-rest:8.0.0
-    container_name: fiapx-kafka-rest
-    ports:
-      - "8084:8082"
-    environment:
-      KAFKA_REST_HOST_NAME: kafka-rest
-      KAFKA_REST_BOOTSTRAP_SERVERS: kafka:19092
-      KAFKA_REST_LISTENERS: http://0.0.0.0:8082
-    depends_on:
-      kafka:
         condition: service_healthy
 
   kafka:

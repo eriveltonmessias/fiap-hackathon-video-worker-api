@@ -1,97 +1,94 @@
-# Fluxo local com Postman
+# Fluxo ponta a ponta dos tres projetos
 
-A collection `Video Worker - Fluxo Completo.postman_collection.json` percorre o
-processamento de ponta a ponta. Ela usa:
+A collection `FIAP X - Fluxo Ponta a Ponta.postman_collection.json` executa:
 
-- Actuator para saude e metricas;
-- API S3 do MinIO para upload do video e download do ZIP;
-- Kafka REST Proxy para publicar e consumir os eventos;
-- o worker real para MongoDB, FFmpeg, compactacao e outbox.
-
-O Kafka REST Proxy existe apenas no profile local `flow`. Ele nao faz parte do
-deployment do EKS.
-
-## 1. Pre-requisitos
-
-- Docker Desktop ou Docker Engine com Compose;
-- Postman Desktop;
-- portas `8083`, `8084`, `9000`, `9001`, `9092` e `27017` livres.
-
-## 2. Subir toda a infraestrutura
-
-Na raiz do projeto:
-
-```bash
-docker compose --profile flow up --build -d
+```text
+customer-auth-api -> video-manager-api -> Kafka -> video-worker-api
+                  <- video-manager-api <- Kafka <-
 ```
 
-Esse comando inicia:
+Ela cadastra um cliente, autentica, envia um video ao manager, aguarda o worker
+produzir o ZIP, confirma o status final no manager e baixa o resultado.
 
-| Servico | Porta | Finalidade |
-| --- | --- | --- |
-| Video Worker | `8083` | worker e Actuator |
-| Kafka REST Proxy | `8084` | acesso HTTP local ao Kafka |
-| MinIO API | `9000` | armazenamento dos videos e ZIPs |
-| MinIO Console | `9001` | inspecao visual dos buckets |
-| Kafka | `9092` | broker local |
-| MongoDB | `27017` | persistencia dos jobs e outbox |
+## 1. Estrutura esperada
 
-Acompanhe a inicializacao:
+Os repositorios devem estar lado a lado:
 
-```bash
-docker compose --profile flow ps
-docker compose --profile flow logs -f video-worker
+```text
+hackton-fiap/
+  customer-auth-api/
+  video-manager-api/
+  video-worker-api/
 ```
 
-Espere a readiness responder com `UP`:
+## 2. Subir os tres projetos e a infraestrutura
+
+Dentro de `video-worker-api`:
 
 ```bash
+docker compose -f docker-compose.full.yml up --build -d
+docker compose -f docker-compose.full.yml ps
+```
+
+O Compose sobe os tres projetos e uma unica instancia compartilhada de Kafka e
+MinIO, alem de PostgreSQL para auth e manager e MongoDB para o worker.
+
+| Componente | Endereco local |
+| --- | --- |
+| Customer Auth API | `http://localhost:8081` |
+| Video Manager API | `http://localhost:8082` |
+| Video Worker API | `http://localhost:8083` |
+| MinIO API | `http://localhost:9000` |
+| MinIO Console | `http://localhost:9001` |
+| Kafka | `localhost:9092` |
+| PostgreSQL Auth | `localhost:5433` |
+| PostgreSQL Manager | `localhost:5434` |
+| MongoDB Worker | `localhost:27017` |
+
+Espere os health checks:
+
+```bash
+curl --fail http://localhost:8081/actuator/health
+curl --fail http://localhost:8082/actuator/health/readiness
 curl --fail http://localhost:8083/actuator/health/readiness
-curl --fail http://localhost:8084/topics
-curl --fail http://localhost:9000/minio/health/live
 ```
 
-## 3. Importar e executar
-
-1. Importe `postman/Video Worker - Fluxo Completo.postman_collection.json`.
-2. Abra `01 - Sucesso / 01 - Upload do video`.
-3. Em **Body > binary**, selecione `postman/assets/sample-video.mp4` caso o
-   Postman nao preserve o caminho relativo importado.
-4. Execute a collection no Collection Runner, na ordem original.
-
-A collection gera UUIDs novos, envia o video, cria um consumidor temporario,
-publica `VideoProcessingRequested`, aguarda `VideoProcessed`, baixa o ZIP e
-repete o evento para validar a entrada idempotente. Depois executa um fluxo sem
-objeto no MinIO e aguarda `VideoProcessingFailed`.
-
-Os polls se repetem automaticamente no Collection Runner por ate 30 segundos.
-Ao enviar requests manualmente, repita o request de poll enquanto a resposta
-estiver vazia.
-
-O download retorna bytes ZIP. No envio manual, use **Send and Download** para
-gravar e abrir o arquivo.
-
-## 4. Inspecionar os dados
-
-- MinIO Console: `http://localhost:9001`
-- usuario: `fiapx`
-- senha: `fiapx12345`
-- MongoDB: banco `video_worker_db`, collection `video_processing_jobs`
-- metricas: `http://localhost:8083/actuator/prometheus`
-
-O bucket de entrada e `fiapx-videos-input`; o de saida e
-`fiapx-videos-output`.
-
-## 5. Encerrar
-
-Preserve os volumes:
+Para acompanhar a inicializacao:
 
 ```bash
-docker compose --profile flow down
+docker compose -f docker-compose.full.yml logs -f \
+  customer-auth-api video-manager-api video-worker-api
 ```
 
-Remova tambem todos os dados locais:
+## 3. Executar a collection
+
+1. Importe `postman/FIAP X - Fluxo Ponta a Ponta.postman_collection.json`.
+2. Abra `02 - Processamento / 01 - Upload do video`.
+3. Em **Body > form-data**, selecione `postman/assets/sample-video.mp4` caso o
+   Postman nao preserve o caminho relativo.
+4. Execute a collection inteira no Collection Runner, mantendo a ordem.
+
+As fases sao:
+
+1. saude dos tres projetos;
+2. cadastro, login e validacao do cliente;
+3. upload, polling do processamento e download do ZIP;
+4. consultas finais e metricas.
+
+O polling repete automaticamente no Collection Runner por ate 60 segundos. No
+envio manual, repita `02 - Aguardar processamento` enquanto o status ainda nao
+for `PROCESSED`.
+
+## 4. Encerrar
+
+Preserve os dados:
 
 ```bash
-docker compose --profile flow down --volumes
+docker compose -f docker-compose.full.yml down
+```
+
+Remova tambem os volumes:
+
+```bash
+docker compose -f docker-compose.full.yml down --volumes
 ```
