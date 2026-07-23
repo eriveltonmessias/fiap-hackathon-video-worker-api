@@ -1,6 +1,6 @@
 services:
   video-worker:
-    profiles: ["app"]
+    profiles: ["app", "flow"]
     build:
       context: .
     container_name: fiapx-video-worker
@@ -18,6 +18,20 @@ services:
       minio:
         condition: service_healthy
       mongo-worker:
+        condition: service_healthy
+
+  kafka-rest:
+    profiles: ["flow"]
+    image: confluentinc/cp-kafka-rest:8.0.0
+    container_name: fiapx-kafka-rest
+    ports:
+      - "8084:8082"
+    environment:
+      KAFKA_REST_HOST_NAME: kafka-rest
+      KAFKA_REST_BOOTSTRAP_SERVERS: kafka:19092
+      KAFKA_REST_LISTENERS: http://0.0.0.0:8082
+    depends_on:
+      kafka:
         condition: service_healthy
 
   kafka:
@@ -76,9 +90,9 @@ services:
     healthcheck:
       test: ["CMD", "mongosh", "--quiet", "--eval", "db.adminCommand('ping').ok"]
       interval: 10s
-      timeout: 5s
-      retries: 5
-      start_period: 10s
+      timeout: 10s
+      retries: 10
+      start_period: 30s
 
 volumes:
   kafka_data:

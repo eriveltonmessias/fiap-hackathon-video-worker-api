@@ -125,6 +125,11 @@ docker compose --profile app down
 Os payloads, topicos, chaves Kafka e regras de idempotencia estao documentados
 em [`docs/events.md`](docs/events.md).
 
+## Fluxo manual
+
+A collection Postman faseada e o passo a passo para subir toda a infraestrutura
+local estao em [`postman/README.md`](postman/README.md).
+
 ## Variaveis
 
 | Variavel | Padrao |
