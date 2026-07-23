@@ -1,26 +1,35 @@
 package com.fiap.hackathon.videoworkerapi.infrastructure.processing
 
+import com.fiap.hackathon.videoworkerapi.application.processing.FrameExtractionCancelledException
 import com.fiap.hackathon.videoworkerapi.application.processing.FrameExtractionException
 import com.fiap.hackathon.videoworkerapi.application.processing.FrameExtractionResult
 import com.fiap.hackathon.videoworkerapi.application.processing.FrameExtractionTimeoutException
 import com.fiap.hackathon.videoworkerapi.application.processing.FrameExtractor
+import org.springframework.beans.factory.DisposableBean
 import org.springframework.stereotype.Component
 import java.io.IOException
 import java.nio.file.Files
 import java.nio.file.Path
 import java.time.Duration
+import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.TimeUnit
 
 @Component
 class FfmpegFrameExtractor(
 	private val properties: FfmpegProperties,
-) : FrameExtractor {
+) : FrameExtractor, DisposableBean {
+	private val activeProcesses = ConcurrentHashMap.newKeySet<Process>()
+	private val lifecycleLock = Any()
+
+	@Volatile
+	private var shuttingDown = false
+
 	override fun extract(inputFile: Path, outputDirectory: Path): FrameExtractionResult {
 		require(Files.isRegularFile(inputFile)) { "Input video must be a regular file" }
 		prepareEmptyOutputDirectory(outputDirectory)
 
 		val startedAt = System.nanoTime()
-		val process = startProcess(inputFile, outputDirectory)
+		val process = startTrackedProcess(inputFile, outputDirectory)
 
 		try {
 			if (!process.waitFor(properties.timeout.toMillis(), TimeUnit.MILLISECONDS)) {
@@ -31,24 +40,44 @@ class FfmpegFrameExtractor(
 
 			if (process.exitValue() != 0) {
 				deleteGeneratedFrames(outputDirectory)
+				if (shuttingDown) {
+					throw FrameExtractionCancelledException("FFmpeg frame extraction was cancelled")
+				}
 				throw FrameExtractionException("FFmpeg frame extraction failed")
 			}
+
+			val frameCount = generatedFrames(outputDirectory).size
+			if (frameCount == 0) {
+				throw FrameExtractionException("FFmpeg did not generate any frames")
+			}
+
+			return FrameExtractionResult(
+				frameCount = frameCount,
+				duration = Duration.ofNanos(System.nanoTime() - startedAt),
+			)
 		} catch (exception: InterruptedException) {
 			terminate(process)
 			deleteGeneratedFrames(outputDirectory)
 			Thread.currentThread().interrupt()
-			throw FrameExtractionException("FFmpeg frame extraction was interrupted")
+			throw FrameExtractionCancelledException("FFmpeg frame extraction was interrupted")
+		} finally {
+			activeProcesses.remove(process)
 		}
+	}
 
-		val frameCount = generatedFrames(outputDirectory).size
-		if (frameCount == 0) {
-			throw FrameExtractionException("FFmpeg did not generate any frames")
+	override fun destroy() {
+		val processes = synchronized(lifecycleLock) {
+			shuttingDown = true
+			activeProcesses.toList()
 		}
+		processes.forEach(::terminate)
+	}
 
-		return FrameExtractionResult(
-			frameCount = frameCount,
-			duration = Duration.ofNanos(System.nanoTime() - startedAt),
-		)
+	private fun startTrackedProcess(inputFile: Path, outputDirectory: Path): Process = synchronized(lifecycleLock) {
+		if (shuttingDown) {
+			throw FrameExtractionCancelledException("FFmpeg frame extractor is shutting down")
+		}
+		startProcess(inputFile, outputDirectory).also(activeProcesses::add)
 	}
 
 	private fun startProcess(inputFile: Path, outputDirectory: Path): Process {

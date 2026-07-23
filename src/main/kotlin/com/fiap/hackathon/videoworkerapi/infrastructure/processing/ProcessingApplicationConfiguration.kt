@@ -7,6 +7,7 @@ import com.fiap.hackathon.videoworkerapi.application.processing.FrameExtractor
 import com.fiap.hackathon.videoworkerapi.application.processing.HandleVideoProcessingRequest
 import com.fiap.hackathon.videoworkerapi.application.processing.ProcessingJobIdGenerator
 import com.fiap.hackathon.videoworkerapi.application.processing.ProcessingJobRepository
+import com.fiap.hackathon.videoworkerapi.application.processing.ProcessingMetrics
 import com.fiap.hackathon.videoworkerapi.application.processing.ProcessingResultEventIdGenerator
 import com.fiap.hackathon.videoworkerapi.application.processing.VideoProcessor
 import com.fiap.hackathon.videoworkerapi.application.processing.VideoStorage
@@ -45,10 +46,12 @@ class ProcessingApplicationConfiguration {
 		repository: ProcessingJobRepository,
 		resultEventIdGenerator: ProcessingResultEventIdGenerator,
 		processingClock: Clock,
+		metrics: ProcessingMetrics,
 	): FailExhaustedProcessing = FailExhaustedProcessing(
 		repository = repository,
 		resultEventIdGenerator = resultEventIdGenerator,
 		clock = processingClock,
+		metrics = metrics,
 	)
 
 	@Bean
@@ -60,6 +63,7 @@ class ProcessingApplicationConfiguration {
 		processingClock: Clock,
 		processingProperties: ProcessingProperties,
 		resultEventIdGenerator: ProcessingResultEventIdGenerator,
+		metrics: ProcessingMetrics,
 	): VideoProcessor = DefaultVideoProcessor(
 		repository = repository,
 		storage = storage,
@@ -68,5 +72,6 @@ class ProcessingApplicationConfiguration {
 		clock = processingClock,
 		temporaryDirectory = processingProperties.temporaryDirectory,
 		resultEventIdGenerator = resultEventIdGenerator,
+		metrics = metrics,
 	)
 }

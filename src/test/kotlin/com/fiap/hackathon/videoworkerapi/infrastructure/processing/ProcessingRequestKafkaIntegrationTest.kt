@@ -10,6 +10,7 @@ import org.apache.kafka.clients.consumer.ConsumerConfig
 import org.apache.kafka.clients.consumer.ConsumerRecord
 import org.apache.kafka.clients.consumer.KafkaConsumer
 import org.apache.kafka.common.serialization.StringDeserializer
+import org.slf4j.MDC
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
 import org.springframework.beans.factory.annotation.Autowired
@@ -61,6 +62,7 @@ class ProcessingRequestKafkaIntegrationTest(
 		springDataRepository.deleteAll()
 		videoProcessor.processedVideoIds.clear()
 		videoProcessor.failuresBeforeSuccess.clear()
+		videoProcessor.loggingContexts.clear()
 	}
 
 	@Test
@@ -79,6 +81,8 @@ class ProcessingRequestKafkaIntegrationTest(
 		assertEquals(event.originalFilename, job.originalFilename.value)
 		assertEquals(event.inputObjectKey, job.inputObjectKey.value)
 		assertEquals(listOf(event.videoId), videoProcessor.processedVideoIds)
+		assertEquals(event.videoId.toString(), videoProcessor.loggingContexts.single().first)
+		assertEquals(event.eventId.toString(), videoProcessor.loggingContexts.single().second)
 	}
 
 	@Test
@@ -252,9 +256,11 @@ class RecordingVideoProcessor(
 ) : VideoProcessor {
 	val processedVideoIds = CopyOnWriteArrayList<UUID>()
 	val failuresBeforeSuccess = java.util.concurrent.ConcurrentHashMap<UUID, Int>()
+	val loggingContexts = CopyOnWriteArrayList<Pair<String?, String?>>()
 
 	override fun process(videoId: UUID) {
 		processedVideoIds.add(videoId)
+		loggingContexts.add(MDC.get("videoId") to MDC.get("eventId"))
 		val remaining = failuresBeforeSuccess[videoId] ?: return
 		val job = requireNotNull(repository.findByVideoId(videoId))
 		val changedAt = maxOf(Instant.now(), job.updatedAt)

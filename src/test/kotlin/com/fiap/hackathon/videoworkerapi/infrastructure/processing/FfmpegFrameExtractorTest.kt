@@ -1,6 +1,7 @@
 package com.fiap.hackathon.videoworkerapi.infrastructure.processing
 
 import com.fiap.hackathon.videoworkerapi.application.processing.FrameExtractionException
+import com.fiap.hackathon.videoworkerapi.application.processing.FrameExtractionCancelledException
 import com.fiap.hackathon.videoworkerapi.application.processing.FrameExtractionTimeoutException
 import org.junit.jupiter.api.io.TempDir
 import java.nio.charset.StandardCharsets
@@ -9,10 +10,13 @@ import java.nio.file.Path
 import java.nio.file.attribute.PosixFilePermission
 import java.time.Duration
 import java.util.concurrent.TimeUnit
+import java.util.concurrent.ExecutionException
+import java.util.concurrent.Executors
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
 import kotlin.test.assertFailsWith
+import kotlin.test.assertIs
 import kotlin.test.assertTrue
 
 class FfmpegFrameExtractorTest {
@@ -84,6 +88,45 @@ class FfmpegFrameExtractorTest {
 
 		assertFailsWith<FrameExtractionTimeoutException> {
 			timedExtractor.extract(inputFile, temporaryDirectory.resolve("timeout-frames"))
+		}
+	}
+
+	@Test
+	fun `cancels active ffmpeg process during application shutdown`() {
+		val startedMarker = temporaryDirectory.resolve("ffmpeg-started")
+		val slowExecutable = temporaryDirectory.resolve("shutdown-ffmpeg.sh")
+		Files.writeString(
+			slowExecutable,
+			"#!/bin/sh\ntouch '${startedMarker}'\nsleep 30\n",
+			StandardCharsets.UTF_8,
+		)
+		Files.setPosixFilePermissions(
+			slowExecutable,
+			setOf(
+				PosixFilePermission.OWNER_READ,
+				PosixFilePermission.OWNER_WRITE,
+				PosixFilePermission.OWNER_EXECUTE,
+			),
+		)
+		val shutdownExtractor = FfmpegFrameExtractor(
+			FfmpegProperties(executable = slowExecutable.toString(), timeout = Duration.ofMinutes(1)),
+		)
+		val inputFile = createVideo("shutdown.mp4")
+		val executor = Executors.newSingleThreadExecutor()
+		try {
+			val extraction = executor.submit {
+				shutdownExtractor.extract(inputFile, temporaryDirectory.resolve("shutdown-frames"))
+			}
+			val deadline = System.nanoTime() + Duration.ofSeconds(5).toNanos()
+			while (!Files.exists(startedMarker) && System.nanoTime() < deadline) Thread.sleep(25)
+			assertTrue(Files.exists(startedMarker), "Fake FFmpeg process did not start")
+
+			shutdownExtractor.destroy()
+
+			val exception = assertFailsWith<ExecutionException> { extraction.get(5, TimeUnit.SECONDS) }
+			assertIs<FrameExtractionCancelledException>(exception.cause)
+		} finally {
+			executor.shutdownNow()
 		}
 	}
 

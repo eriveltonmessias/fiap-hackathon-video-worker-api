@@ -32,6 +32,7 @@ class DefaultVideoProcessorTest {
 	private val receivedAt = Instant.parse("2026-01-01T10:00:00Z")
 	private val repository = RecordingProcessingJobRepository(newJob())
 	private val storage = RecordingVideoStorage()
+	private val metrics = RecordingProcessingMetrics()
 
 	@Test
 	fun `runs every stage uploads zip and removes temporary workspace`() {
@@ -66,6 +67,9 @@ class DefaultVideoProcessorTest {
 		assertEquals(job.outputObjectKey, storage.uploadedObjectKey)
 		assertEquals("application/zip", storage.uploadedContentType)
 		assertEquals(listOf("frame-000001.jpg", "frame-000002.jpg"), zipEntries(storage.uploadedContent))
+		assertEquals(1, metrics.attempts)
+		assertEquals(2, metrics.frames)
+		assertEquals(1, metrics.completed)
 		assertDirectoryIsEmpty(temporaryDirectory)
 	}
 
@@ -81,6 +85,7 @@ class DefaultVideoProcessorTest {
 		assertEquals(1, repository.job.attempts)
 		assertEquals("Frame extraction timed out", repository.job.failureReason?.value)
 		assertTrue(requireNotNull(repository.job.resultOutbox).isPending)
+		assertEquals(listOf(ProcessingFailureType.FRAME_TIMEOUT to true), metrics.failures)
 		assertNull(storage.uploadedContent)
 		assertDirectoryIsEmpty(temporaryDirectory)
 	}
@@ -98,6 +103,7 @@ class DefaultVideoProcessorTest {
 		assertEquals(ProcessingJobStatus.PROCESSING, repository.job.status)
 		assertEquals(1, repository.job.attempts)
 		assertNull(repository.job.resultOutbox)
+		assertEquals(listOf(ProcessingFailureType.STORAGE to false), metrics.failures)
 
 		storage.downloadFailure = null
 		processor.process(videoId)
@@ -105,6 +111,9 @@ class DefaultVideoProcessorTest {
 		assertEquals(ProcessingJobStatus.COMPLETED, repository.job.status)
 		assertEquals(2, repository.job.attempts)
 		assertTrue(requireNotNull(repository.job.resultOutbox).isPending)
+		assertEquals(2, metrics.attempts)
+		assertEquals(1, metrics.retries)
+		assertEquals(1, metrics.completed)
 		assertDirectoryIsEmpty(temporaryDirectory)
 	}
 
@@ -118,6 +127,7 @@ class DefaultVideoProcessorTest {
 		resultEventIdGenerator = ProcessingResultEventIdGenerator {
 			UUID.fromString("ef2ec18e-9c74-4613-bf03-0a8ab1a762f1")
 		},
+		metrics = metrics,
 	)
 
 	private fun newJob(): VideoProcessingJob = VideoProcessingJob.receive(
@@ -144,6 +154,31 @@ class DefaultVideoProcessorTest {
 
 	private fun assertDirectoryIsEmpty(directory: Path) {
 		assertTrue(Files.list(directory).use { it.findAny().isEmpty })
+	}
+}
+
+private class RecordingProcessingMetrics : ProcessingMetrics {
+	var attempts: Int = 0
+	var retries: Int = 0
+	var frames: Int = 0
+	var completed: Int = 0
+	val failures = mutableListOf<Pair<ProcessingFailureType, Boolean>>()
+
+	override fun attemptStarted(retry: Boolean) {
+		attempts += 1
+		if (retry) retries += 1
+	}
+
+	override fun framesGenerated(count: Int) {
+		frames += count
+	}
+
+	override fun completed(duration: Duration) {
+		completed += 1
+	}
+
+	override fun failed(type: ProcessingFailureType, duration: Duration?, terminal: Boolean) {
+		failures.add(type to terminal)
 	}
 }
 
