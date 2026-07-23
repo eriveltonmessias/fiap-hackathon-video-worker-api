@@ -18,6 +18,11 @@ spring:
     listener:
       ack-mode: record
       auto-startup: ${KAFKA_LISTENER_AUTO_STARTUP:true}
+      immediate-stop: false
+      observation-enabled: true
+    admin:
+      operation-timeout: ${KAFKA_HEALTH_TIMEOUT:3s}
+      close-timeout: ${KAFKA_HEALTH_TIMEOUT:3s}
     producer:
       acks: all
       key-serializer: org.apache.kafka.common.serialization.StringSerializer
@@ -77,4 +82,4 @@ management:
         liveness:
           include: livenessState
         readiness:
-          include: readinessState
+          include: readinessState,mongo,kafka,minio

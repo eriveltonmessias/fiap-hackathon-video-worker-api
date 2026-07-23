@@ -24,10 +24,8 @@ A primeira estrutura inclui:
 - pipeline completo com download, transicoes persistidas, upload e limpeza temporaria;
 - outbox persistido com o job e publicacao confirmada pelo Kafka;
 - retry limitado para falhas transitorias e DLQ sanitizada para mensagens irrecuperaveis;
+- metricas Prometheus, logs ECS correlacionados e probes das dependencias;
 - separacao entre dominio, aplicacao e infraestrutura.
-
-O processamento e os adapters serao adicionados em cortes pequenos, com uma
-branch e validacao independente para cada etapa.
 
 ## Arquitetura
 
@@ -110,6 +108,7 @@ curl http://localhost:8083/actuator/health/readiness
 | `KAFKA_PROCESSING_MAX_ATTEMPTS` | `3` |
 | `KAFKA_PROCESSING_RETRY_INTERVAL` | `1s` |
 | `KAFKA_DLQ_PUBLISH_TIMEOUT` | `10s` |
+| `KAFKA_HEALTH_TIMEOUT` | `3s` |
 | `OUTBOX_SCHEDULING_ENABLED` | `true` |
 | `OUTBOX_INITIAL_DELAY` | `5s` |
 | `OUTBOX_FIXED_DELAY` | `5s` |
@@ -131,3 +130,44 @@ curl http://localhost:8083/actuator/health/readiness
 Os valores sao somente para desenvolvimento local. No EKS, credenciais devem
 vir de Kubernetes Secrets ou de um gerenciador externo. O diretorio temporario
 pode apontar para um volume `emptyDir` com limite de armazenamento definido.
+
+## EKS
+
+A liveness verifica apenas o estado interno da aplicacao. A readiness inclui
+MongoDB, Kafka e os buckets MinIO, evitando reiniciar o pod por uma dependencia
+temporariamente indisponivel.
+
+```yaml
+ports:
+  - name: management
+    containerPort: 8083
+livenessProbe:
+  httpGet:
+    path: /actuator/health/liveness
+    port: management
+  periodSeconds: 10
+  timeoutSeconds: 3
+readinessProbe:
+  httpGet:
+    path: /actuator/health/readiness
+    port: management
+  periodSeconds: 5
+  timeoutSeconds: 3
+terminationGracePeriodSeconds: 45
+```
+
+No `SIGTERM`, o listener Kafka para de buscar novas mensagens e aguarda o
+processamento corrente dentro de `SHUTDOWN_TIMEOUT`. Processos FFmpeg ainda
+ativos sao encerrados ao fechar o contexto. O tempo de terminacao do pod deve
+ser maior que `SHUTDOWN_TIMEOUT`.
+
+O endpoint `/actuator/prometheus` expoe, entre outras, as metricas:
+
+- `video_worker_jobs_total`;
+- `video_worker_processing_duration_seconds`;
+- `video_worker_frames_generated_total`;
+- `video_worker_failures_total`;
+- `video_worker_processing_retries_total`.
+
+Os logs usam o formato ECS e recebem `videoId` e `eventId` via MDC durante o
+consumo. Esses identificadores nao sao usados como tags de metricas.

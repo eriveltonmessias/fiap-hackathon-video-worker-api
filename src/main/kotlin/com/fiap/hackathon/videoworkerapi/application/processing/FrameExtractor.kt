@@ -15,3 +15,5 @@ data class FrameExtractionResult(
 open class FrameExtractionException(message: String) : RuntimeException(message)
 
 class FrameExtractionTimeoutException(message: String) : FrameExtractionException(message)
+
+class FrameExtractionCancelledException(message: String) : FrameExtractionException(message)

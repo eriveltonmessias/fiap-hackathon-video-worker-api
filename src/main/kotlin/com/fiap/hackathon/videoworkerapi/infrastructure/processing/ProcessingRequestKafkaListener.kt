@@ -7,6 +7,7 @@ import com.fiap.hackathon.videoworkerapi.application.processing.VideoProcessingR
 import com.fiap.hackathon.videoworkerapi.domain.processing.ObjectKey
 import com.fiap.hackathon.videoworkerapi.domain.processing.OriginalFilename
 import org.apache.kafka.clients.consumer.ConsumerRecord
+import org.slf4j.MDC
 import org.springframework.kafka.annotation.KafkaListener
 import org.springframework.stereotype.Component
 import tools.jackson.databind.ObjectMapper
@@ -20,8 +21,12 @@ class ProcessingRequestKafkaListener(
 	@KafkaListener(topics = [VideoProcessingRequested.TOPIC])
 	fun consume(record: ConsumerRecord<String, String>) {
 		val request = parse(record)
-		if (handler.handle(request) != ProcessingRequestResult.ALREADY_REGISTERED) {
-			videoProcessor.process(request.videoId)
+		MDC.putCloseable("videoId", request.videoId.toString()).use {
+			MDC.putCloseable("eventId", request.eventId.toString()).use {
+				if (handler.handle(request) != ProcessingRequestResult.ALREADY_REGISTERED) {
+					videoProcessor.process(request.videoId)
+				}
+			}
 		}
 	}
 

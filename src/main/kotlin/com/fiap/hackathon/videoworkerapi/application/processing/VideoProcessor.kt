@@ -9,6 +9,7 @@ import java.io.IOException
 import java.nio.file.Files
 import java.nio.file.Path
 import java.time.Clock
+import java.time.Duration
 import java.time.Instant
 import java.util.Comparator
 import java.util.UUID
@@ -31,10 +32,13 @@ class DefaultVideoProcessor(
 	private val clock: Clock,
 	private val temporaryDirectory: Path,
 	private val resultEventIdGenerator: ProcessingResultEventIdGenerator,
+	private val metrics: ProcessingMetrics = ProcessingMetrics.NOOP,
 ) : VideoProcessor {
 	override fun process(videoId: UUID) {
 		val job = requireNotNull(repository.findByVideoId(videoId)) { "Processing job was not found" }
 		if (job.isTerminal()) return
+		val startedAtNanos = System.nanoTime()
+		val retry = job.status != ProcessingJobStatus.RECEIVED
 
 		var workspace: Path? = null
 		try {
@@ -43,6 +47,8 @@ class DefaultVideoProcessor(
 			} else {
 				transition(job, VideoProcessingJob::retry)
 			}
+			metrics.attemptStarted(retry)
+			LOGGER.info("Video processing attempt started attempt={} retry={}", job.attempts, retry)
 			Files.createDirectories(temporaryDirectory)
 			workspace = Files.createTempDirectory(temporaryDirectory, WORKSPACE_PREFIX)
 			val inputFile = workspace.resolve(INPUT_FILENAME)
@@ -56,6 +62,7 @@ class DefaultVideoProcessor(
 			transition(job, VideoProcessingJob::markGeneratingFrames)
 			val extraction = frameExtractor.extract(inputFile, framesDirectory)
 			transition(job) { changedAt -> job.markCompressing(extraction.frameCount, changedAt) }
+			metrics.framesGenerated(extraction.frameCount)
 
 			frameArchiver.archive(framesDirectory, archiveFile)
 			transition(job, VideoProcessingJob::markUploadingResult)
@@ -73,16 +80,54 @@ class DefaultVideoProcessor(
 			transition(job) { changedAt ->
 				job.complete(outputObjectKey, resultEventIdGenerator.generate(), changedAt)
 			}
+			val duration = elapsedSince(startedAtNanos)
+			metrics.completed(duration)
+			LOGGER.info(
+				"Video processing completed attempt={} frames={} durationMs={}",
+				job.attempts,
+				extraction.frameCount,
+				duration.toMillis(),
+			)
 		} catch (exception: Exception) {
-			val reason = permanentFailureReason(exception)
+			val failure = permanentFailure(exception)
+			val transientFailureType = transientFailureType(exception)
 			when {
-				reason != null -> {
-					job.fail(reason, resultEventIdGenerator.generate(), nextTimestamp(job))
+				failure != null -> {
+					job.fail(failure.reason, resultEventIdGenerator.generate(), nextTimestamp(job))
 					repository.save(job)
+					val duration = elapsedSince(startedAtNanos)
+					metrics.failed(failure.type, duration, terminal = true)
+					LOGGER.warn(
+						"Video processing failed attempt={} failureType={} durationMs={}",
+						job.attempts,
+						failure.type,
+						duration.toMillis(),
+					)
 				}
 
-				isTransient(exception) -> throw TransientVideoProcessingException()
-				else -> throw exception
+				transientFailureType != null -> {
+					val duration = elapsedSince(startedAtNanos)
+					metrics.failed(transientFailureType, duration, terminal = false)
+					LOGGER.warn(
+						"Video processing attempt failed attempt={} failureType={} durationMs={}",
+						job.attempts,
+						transientFailureType,
+						duration.toMillis(),
+					)
+					throw TransientVideoProcessingException()
+				}
+
+				else -> {
+					val duration = elapsedSince(startedAtNanos)
+					metrics.failed(ProcessingFailureType.UNKNOWN, duration, terminal = false)
+					LOGGER.error(
+						"Unexpected video processing failure attempt={} errorType={} durationMs={}",
+						job.attempts,
+						exception.javaClass.simpleName,
+						duration.toMillis(),
+					)
+					throw exception
+				}
 			}
 		} finally {
 			workspace?.let(::deleteWorkspace)
@@ -96,17 +141,32 @@ class DefaultVideoProcessor(
 
 	private fun nextTimestamp(job: VideoProcessingJob): Instant = maxOf(Instant.now(clock), job.updatedAt)
 
-	private fun permanentFailureReason(exception: Exception): FailureReason? = when (exception) {
-		is StorageObjectNotFoundException -> FailureReason.of("Input video was not found")
-		is FrameExtractionTimeoutException -> FailureReason.of("Frame extraction timed out")
-		is FrameExtractionException -> FailureReason.of("Frame extraction failed")
+	private fun permanentFailure(exception: Exception): ProcessingFailure? = when (exception) {
+		is StorageObjectNotFoundException -> ProcessingFailure(
+			FailureReason.of("Input video was not found"),
+			ProcessingFailureType.INPUT_NOT_FOUND,
+		)
+		is FrameExtractionTimeoutException -> ProcessingFailure(
+			FailureReason.of("Frame extraction timed out"),
+			ProcessingFailureType.FRAME_TIMEOUT,
+		)
+		is FrameExtractionCancelledException -> null
+		is FrameExtractionException -> ProcessingFailure(
+			FailureReason.of("Frame extraction failed"),
+			ProcessingFailureType.FRAME_EXTRACTION,
+		)
 		else -> null
 	}
 
-	private fun isTransient(exception: Exception): Boolean =
-		exception is StorageUnavailableException ||
-			exception is FrameArchivingException ||
-			exception is IOException
+	private fun transientFailureType(exception: Exception): ProcessingFailureType? = when (exception) {
+		is FrameExtractionCancelledException -> ProcessingFailureType.CANCELLED
+		is StorageUnavailableException -> ProcessingFailureType.STORAGE
+		is FrameArchivingException -> ProcessingFailureType.COMPRESSION
+		is IOException -> ProcessingFailureType.TEMPORARY_FILE
+		else -> null
+	}
+
+	private fun elapsedSince(startedAtNanos: Long): Duration = Duration.ofNanos(System.nanoTime() - startedAtNanos)
 
 	private fun outputObjectKey(job: VideoProcessingJob): ObjectKey = ObjectKey.of(
 		"customers/${job.customerId}/videos/${job.videoId}/output/$ARCHIVE_FILENAME",
@@ -130,4 +190,9 @@ class DefaultVideoProcessor(
 		const val ZIP_CONTENT_TYPE = "application/zip"
 		val LOGGER = LoggerFactory.getLogger(DefaultVideoProcessor::class.java)
 	}
+
+	private data class ProcessingFailure(
+		val reason: FailureReason,
+		val type: ProcessingFailureType,
+	)
 }

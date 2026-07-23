@@ -9,6 +9,7 @@ class FailExhaustedProcessing(
 	private val repository: ProcessingJobRepository,
 	private val resultEventIdGenerator: ProcessingResultEventIdGenerator,
 	private val clock: Clock,
+	private val metrics: ProcessingMetrics = ProcessingMetrics.NOOP,
 ) {
 	fun fail(videoId: UUID) {
 		val job = repository.findByVideoId(videoId) ?: return
@@ -20,5 +21,6 @@ class FailExhaustedProcessing(
 			changedAt,
 		)
 		repository.save(job)
+		metrics.failed(ProcessingFailureType.RETRIES_EXHAUSTED, duration = null, terminal = true)
 	}
 }
