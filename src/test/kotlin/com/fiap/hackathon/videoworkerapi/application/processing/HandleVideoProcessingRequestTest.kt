@@ -31,7 +31,7 @@ class HandleVideoProcessingRequestTest {
 		val first = request()
 		assertEquals(ProcessingRequestResult.REGISTERED, handler.handle(first))
 
-		assertEquals(ProcessingRequestResult.ALREADY_REGISTERED, handler.handle(first))
+		assertEquals(ProcessingRequestResult.RESUME_PROCESSING, handler.handle(first))
 		assertEquals(
 			ProcessingRequestResult.ALREADY_REGISTERED,
 			handler.handle(first.copy(eventId = UUID.randomUUID())),

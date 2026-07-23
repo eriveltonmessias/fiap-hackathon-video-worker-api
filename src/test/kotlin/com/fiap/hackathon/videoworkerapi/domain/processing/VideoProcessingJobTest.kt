@@ -127,6 +127,22 @@ class VideoProcessingJobTest {
 	}
 
 	@Test
+	fun `retries an active job and clears partial frame metadata`() {
+		val job = newJob()
+		job.start(receivedAt.plusSeconds(1))
+		job.markGeneratingFrames(receivedAt.plusSeconds(2))
+		job.markCompressing(12, receivedAt.plusSeconds(3))
+
+		job.retry(receivedAt.plusSeconds(4))
+
+		assertEquals(ProcessingJobStatus.PROCESSING, job.status)
+		assertEquals(2, job.attempts)
+		assertEquals(receivedAt.plusSeconds(1), job.startedAt)
+		assertNull(job.frameCount)
+		assertEquals(receivedAt.plusSeconds(4), job.updatedAt)
+	}
+
+	@Test
 	fun `rejects older transition time without partially changing the job`() {
 		val job = newJob()
 

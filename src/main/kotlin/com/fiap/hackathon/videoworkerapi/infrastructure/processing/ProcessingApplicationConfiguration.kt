@@ -1,6 +1,7 @@
 package com.fiap.hackathon.videoworkerapi.infrastructure.processing
 
 import com.fiap.hackathon.videoworkerapi.application.processing.DefaultVideoProcessor
+import com.fiap.hackathon.videoworkerapi.application.processing.FailExhaustedProcessing
 import com.fiap.hackathon.videoworkerapi.application.processing.FrameArchiver
 import com.fiap.hackathon.videoworkerapi.application.processing.FrameExtractor
 import com.fiap.hackathon.videoworkerapi.application.processing.HandleVideoProcessingRequest
@@ -38,6 +39,17 @@ class ProcessingApplicationConfiguration {
 
 	@Bean
 	fun processingClock(): Clock = Clock.systemUTC()
+
+	@Bean
+	fun failExhaustedProcessing(
+		repository: ProcessingJobRepository,
+		resultEventIdGenerator: ProcessingResultEventIdGenerator,
+		processingClock: Clock,
+	): FailExhaustedProcessing = FailExhaustedProcessing(
+		repository = repository,
+		resultEventIdGenerator = resultEventIdGenerator,
+		clock = processingClock,
+	)
 
 	@Bean
 	fun videoProcessor(

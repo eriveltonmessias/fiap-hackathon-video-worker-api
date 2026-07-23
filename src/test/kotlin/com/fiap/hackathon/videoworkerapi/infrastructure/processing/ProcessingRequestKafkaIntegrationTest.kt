@@ -3,8 +3,13 @@ package com.fiap.hackathon.videoworkerapi.infrastructure.processing
 import com.fiap.hackathon.videoworkerapi.KafkaTestcontainersConfiguration
 import com.fiap.hackathon.videoworkerapi.MongoTestcontainersConfiguration
 import com.fiap.hackathon.videoworkerapi.application.processing.ProcessingJobRepository
+import com.fiap.hackathon.videoworkerapi.application.processing.TransientVideoProcessingException
 import com.fiap.hackathon.videoworkerapi.application.processing.VideoProcessor
+import com.fiap.hackathon.videoworkerapi.domain.processing.ProcessingJobStatus
+import org.apache.kafka.clients.consumer.ConsumerConfig
 import org.apache.kafka.clients.consumer.ConsumerRecord
+import org.apache.kafka.clients.consumer.KafkaConsumer
+import org.apache.kafka.common.serialization.StringDeserializer
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
 import org.springframework.beans.factory.annotation.Autowired
@@ -14,14 +19,18 @@ import org.springframework.context.annotation.Bean
 import org.springframework.context.annotation.Import
 import org.springframework.context.annotation.Primary
 import org.springframework.kafka.core.KafkaTemplate
+import org.testcontainers.kafka.KafkaContainer
+import tools.jackson.databind.JsonNode
 import tools.jackson.databind.ObjectMapper
 import java.time.Duration
 import java.time.Instant
 import java.util.UUID
 import java.util.concurrent.CopyOnWriteArrayList
 import kotlin.test.assertEquals
+import kotlin.test.assertFalse
 import kotlin.test.assertNotNull
 import kotlin.test.assertNull
+import kotlin.test.assertTrue
 
 @SpringBootTest(
 	webEnvironment = SpringBootTest.WebEnvironment.NONE,
@@ -29,6 +38,8 @@ import kotlin.test.assertNull
 		"management.server.port=-1",
 		"app.storage.minio.initialize-buckets=false",
 		"app.outbox.scheduling-enabled=false",
+		"app.kafka.retry.interval=10ms",
+		"app.kafka.retry.max-attempts=3",
 	],
 )
 @Import(
@@ -43,11 +54,13 @@ class ProcessingRequestKafkaIntegrationTest(
 	@Autowired private val springDataRepository: SpringDataProcessingJobRepository,
 	@Autowired private val listener: ProcessingRequestKafkaListener,
 	@Autowired private val videoProcessor: RecordingVideoProcessor,
+	@Autowired private val kafkaContainer: KafkaContainer,
 ) {
 	@BeforeEach
 	fun cleanDatabase() {
 		springDataRepository.deleteAll()
 		videoProcessor.processedVideoIds.clear()
+		videoProcessor.failuresBeforeSuccess.clear()
 	}
 
 	@Test
@@ -78,7 +91,7 @@ class ProcessingRequestKafkaIntegrationTest(
 
 		assertEquals(1L, springDataRepository.count())
 		assertEquals(event.eventId, repository.findByVideoId(event.videoId)?.requestEventId)
-		assertEquals(listOf(event.videoId), videoProcessor.processedVideoIds)
+		assertEquals(listOf(event.videoId, event.videoId), videoProcessor.processedVideoIds)
 	}
 
 	@Test
@@ -100,6 +113,10 @@ class ProcessingRequestKafkaIntegrationTest(
 		assertNotNull(awaitJob(valid.videoId))
 		assertNull(repository.findByVideoId(invalidVideoId))
 		assertEquals(1L, springDataRepository.count())
+		val deadLetter = awaitDeadLetter(invalidVideoId, DeadLetterFailureType.INVALID_REQUEST)
+		assertEquals(VideoProcessingRequested.TOPIC, deadLetter.path("sourceTopic").stringValue())
+		assertEquals(8, deadLetter.size())
+		assertFalse(deadLetter.toString().contains("\"videoId\":\"invalid\""))
 	}
 
 	@Test
@@ -119,6 +136,72 @@ class ProcessingRequestKafkaIntegrationTest(
 
 		assertEquals("Invalid video processing request", exception.message)
 		assertNull(repository.findByVideoId(event.videoId))
+	}
+
+	@Test
+	fun `retries transient processing failure and records every attempt`() {
+		val event = event()
+		videoProcessor.failuresBeforeSuccess[event.videoId] = 2
+
+		kafkaTemplate.send(
+			VideoProcessingRequested.TOPIC,
+			event.videoId.toString(),
+			objectMapper.writeValueAsString(event),
+		).get()
+
+		val job = assertNotNull(pollUntil(Duration.ofSeconds(15)) {
+			repository.findByVideoId(event.videoId)?.takeIf { it.attempts == 3 }
+		})
+		assertEquals(ProcessingJobStatus.PROCESSING, job.status)
+		assertEquals(3, videoProcessor.processedVideoIds.count { it == event.videoId })
+	}
+
+	@Test
+	fun `exhausted transient processing failure closes job with pending result`() {
+		val event = event()
+		videoProcessor.failuresBeforeSuccess[event.videoId] = Int.MAX_VALUE
+
+		kafkaTemplate.send(
+			VideoProcessingRequested.TOPIC,
+			event.videoId.toString(),
+			objectMapper.writeValueAsString(event),
+		).get()
+
+		val job = assertNotNull(pollUntil(Duration.ofSeconds(15)) {
+			repository.findByVideoId(event.videoId)?.takeIf { it.status == ProcessingJobStatus.FAILED }
+		})
+		assertEquals(3, job.attempts)
+		assertEquals("Processing retries exhausted", job.failureReason?.value)
+		assertTrue(requireNotNull(job.resultOutbox).isPending)
+		val deadLetter = awaitDeadLetter(event.videoId, DeadLetterFailureType.RETRIES_EXHAUSTED)
+		assertEquals(event.videoId.toString(), deadLetter.path("videoId").stringValue())
+		assertEquals(8, deadLetter.size())
+	}
+
+	private fun awaitDeadLetter(videoId: UUID, failureType: DeadLetterFailureType): JsonNode {
+		val properties = mapOf<String, Any>(
+			ConsumerConfig.BOOTSTRAP_SERVERS_CONFIG to kafkaContainer.bootstrapServers,
+			ConsumerConfig.GROUP_ID_CONFIG to "dlq-test-${UUID.randomUUID()}",
+			ConsumerConfig.AUTO_OFFSET_RESET_CONFIG to "earliest",
+			ConsumerConfig.KEY_DESERIALIZER_CLASS_CONFIG to StringDeserializer::class.java,
+			ConsumerConfig.VALUE_DESERIALIZER_CLASS_CONFIG to StringDeserializer::class.java,
+		)
+		return KafkaConsumer<String, String>(properties).use { consumer ->
+			consumer.subscribe(listOf(VideoProcessingRequestDeadLettered.TOPIC))
+			val deadline = System.nanoTime() + Duration.ofSeconds(15).toNanos()
+			while (System.nanoTime() < deadline) {
+				consumer.poll(Duration.ofMillis(250)).forEach { record ->
+					val event = objectMapper.readTree(record.value())
+					if (
+						event.path("videoId").stringValue() == videoId.toString() &&
+							event.path("failureType").stringValue() == failureType.name
+					) {
+						return@use event
+					}
+				}
+			}
+			error("Dead letter event was not received")
+		}
 	}
 
 	private fun awaitJob(videoId: UUID) = assertNotNull(pollUntil(Duration.ofSeconds(15)) {
@@ -160,13 +243,26 @@ class ProcessingRequestKafkaIntegrationTest(
 class StubVideoProcessorConfiguration {
 	@Bean
 	@Primary
-	fun recordingVideoProcessor(): RecordingVideoProcessor = RecordingVideoProcessor()
+	fun recordingVideoProcessor(repository: ProcessingJobRepository): RecordingVideoProcessor =
+		RecordingVideoProcessor(repository)
 }
 
-class RecordingVideoProcessor : VideoProcessor {
+class RecordingVideoProcessor(
+	private val repository: ProcessingJobRepository,
+) : VideoProcessor {
 	val processedVideoIds = CopyOnWriteArrayList<UUID>()
+	val failuresBeforeSuccess = java.util.concurrent.ConcurrentHashMap<UUID, Int>()
 
 	override fun process(videoId: UUID) {
 		processedVideoIds.add(videoId)
+		val remaining = failuresBeforeSuccess[videoId] ?: return
+		val job = requireNotNull(repository.findByVideoId(videoId))
+		val changedAt = maxOf(Instant.now(), job.updatedAt)
+		if (job.status == ProcessingJobStatus.RECEIVED) job.start(changedAt) else job.retry(changedAt)
+		repository.save(job)
+		if (remaining > 0) {
+			failuresBeforeSuccess[videoId] = remaining - 1
+			throw TransientVideoProcessingException()
+		}
 	}
 }

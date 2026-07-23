@@ -23,6 +23,7 @@ A primeira estrutura inclui:
 - compactacao ZIP nativa com todos os frames extraidos;
 - pipeline completo com download, transicoes persistidas, upload e limpeza temporaria;
 - outbox persistido com o job e publicacao confirmada pelo Kafka;
+- retry limitado para falhas transitorias e DLQ sanitizada para mensagens irrecuperaveis;
 - separacao entre dominio, aplicacao e infraestrutura.
 
 O processamento e os adapters serao adicionados em cortes pequenos, com uma
@@ -53,7 +54,8 @@ nao aceitam novas transicoes.
 Resultados sao publicados com chave Kafka igual ao `videoId`:
 
 - `VideoProcessed` no topico `video.processing.completed`;
-- `VideoProcessingFailed` no topico `video.processing.failed`.
+- `VideoProcessingFailed` no topico `video.processing.failed`;
+- `VideoProcessingRequestDeadLettered` no topico `video.processing.requested.dlq`.
 
 O mesmo `eventId` pode ser publicado novamente se o ACK do Kafka ocorrer antes
 da confirmacao no MongoDB. Consumidores devem tratar esse identificador de forma
@@ -105,6 +107,9 @@ curl http://localhost:8083/actuator/health/readiness
 | `MONGODB_URI` | `mongodb://localhost:27017/video_worker_db` |
 | `KAFKA_BOOTSTRAP_SERVERS` | `localhost:9092` |
 | `KAFKA_PROCESSING_REQUESTS_GROUP_ID` | `video-worker-processing-requests` |
+| `KAFKA_PROCESSING_MAX_ATTEMPTS` | `3` |
+| `KAFKA_PROCESSING_RETRY_INTERVAL` | `1s` |
+| `KAFKA_DLQ_PUBLISH_TIMEOUT` | `10s` |
 | `OUTBOX_SCHEDULING_ENABLED` | `true` |
 | `OUTBOX_INITIAL_DELAY` | `5s` |
 | `OUTBOX_FIXED_DELAY` | `5s` |

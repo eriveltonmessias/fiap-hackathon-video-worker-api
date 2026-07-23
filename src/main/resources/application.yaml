@@ -31,6 +31,11 @@ logging:
       console: ecs
 
 app:
+  kafka:
+    retry:
+      max-attempts: ${KAFKA_PROCESSING_MAX_ATTEMPTS:3}
+      interval: ${KAFKA_PROCESSING_RETRY_INTERVAL:1s}
+      dlq-publish-timeout: ${KAFKA_DLQ_PUBLISH_TIMEOUT:10s}
   outbox:
     scheduling-enabled: ${OUTBOX_SCHEDULING_ENABLED:true}
     initial-delay: ${OUTBOX_INITIAL_DELAY:5s}

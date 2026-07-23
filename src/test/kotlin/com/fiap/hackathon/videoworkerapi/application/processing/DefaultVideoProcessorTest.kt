@@ -20,6 +20,7 @@ import java.util.zip.ZipInputStream
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertNull
+import kotlin.test.assertFailsWith
 import kotlin.test.assertTrue
 
 class DefaultVideoProcessorTest {
@@ -77,8 +78,33 @@ class DefaultVideoProcessorTest {
 		processor.process(videoId)
 
 		assertEquals(ProcessingJobStatus.FAILED, repository.job.status)
+		assertEquals(1, repository.job.attempts)
 		assertEquals("Frame extraction timed out", repository.job.failureReason?.value)
+		assertTrue(requireNotNull(repository.job.resultOutbox).isPending)
 		assertNull(storage.uploadedContent)
+		assertDirectoryIsEmpty(temporaryDirectory)
+	}
+
+	@Test
+	fun `keeps active job and increments attempt when transient storage failure is retried`() {
+		storage.downloadFailure = StorageUnavailableException("download")
+		val processor = processor { _, outputDirectory ->
+			Files.createDirectories(outputDirectory)
+			Files.write(outputDirectory.resolve("frame-000001.jpg"), byteArrayOf(1))
+			FrameExtractionResult(1, Duration.ofSeconds(1))
+		}
+
+		assertFailsWith<TransientVideoProcessingException> { processor.process(videoId) }
+		assertEquals(ProcessingJobStatus.PROCESSING, repository.job.status)
+		assertEquals(1, repository.job.attempts)
+		assertNull(repository.job.resultOutbox)
+
+		storage.downloadFailure = null
+		processor.process(videoId)
+
+		assertEquals(ProcessingJobStatus.COMPLETED, repository.job.status)
+		assertEquals(2, repository.job.attempts)
+		assertTrue(requireNotNull(repository.job.resultOutbox).isPending)
 		assertDirectoryIsEmpty(temporaryDirectory)
 	}
 
@@ -143,13 +169,16 @@ private class RecordingProcessingJobRepository(
 }
 
 private class RecordingVideoStorage : VideoStorage {
+	var downloadFailure: RuntimeException? = null
 	var uploadedBucket: StorageBucket? = null
 	var uploadedObjectKey: ObjectKey? = null
 	var uploadedContent: ByteArray? = null
 	var uploadedContentType: String? = null
 
-	override fun download(bucket: StorageBucket, objectKey: ObjectKey): InputStream =
-		ByteArrayInputStream("video".toByteArray())
+	override fun download(bucket: StorageBucket, objectKey: ObjectKey): InputStream {
+		downloadFailure?.let { throw it }
+		return ByteArrayInputStream("video".toByteArray())
+	}
 
 	override fun upload(
 		bucket: StorageBucket,

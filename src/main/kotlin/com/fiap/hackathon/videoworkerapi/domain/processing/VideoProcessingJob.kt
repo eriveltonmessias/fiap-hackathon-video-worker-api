@@ -61,6 +61,17 @@ class VideoProcessingJob private constructor(
 		updatedAt = changedAt
 	}
 
+	fun retry(changedAt: Instant) {
+		check(status != ProcessingJobStatus.RECEIVED && !isTerminal()) {
+			"Job in status $status cannot be retried"
+		}
+		ensureChangedAt(changedAt)
+		attempts += 1
+		frameCount = null
+		status = ProcessingJobStatus.PROCESSING
+		updatedAt = changedAt
+	}
+
 	fun markGeneratingFrames(changedAt: Instant) {
 		transition(ProcessingJobStatus.PROCESSING, ProcessingJobStatus.GENERATING_FRAMES, changedAt)
 	}

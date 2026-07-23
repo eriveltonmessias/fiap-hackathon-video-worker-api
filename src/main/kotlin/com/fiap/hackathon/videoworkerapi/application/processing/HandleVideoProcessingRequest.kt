@@ -24,8 +24,12 @@ class HandleVideoProcessingRequest(
 	private val idGenerator: ProcessingJobIdGenerator,
 ) {
 	fun handle(request: VideoProcessingRequest): ProcessingRequestResult {
-		if (repository.findByRequestEventId(request.eventId) != null) {
-			return ProcessingRequestResult.ALREADY_REGISTERED
+		repository.findByRequestEventId(request.eventId)?.let { existing ->
+			return if (existing.isTerminal()) {
+				ProcessingRequestResult.ALREADY_REGISTERED
+			} else {
+				ProcessingRequestResult.RESUME_PROCESSING
+			}
 		}
 		if (repository.findByVideoId(request.videoId) != null) {
 			return ProcessingRequestResult.ALREADY_REGISTERED
@@ -51,5 +55,6 @@ class HandleVideoProcessingRequest(
 
 enum class ProcessingRequestResult {
 	REGISTERED,
+	RESUME_PROCESSING,
 	ALREADY_REGISTERED,
 }

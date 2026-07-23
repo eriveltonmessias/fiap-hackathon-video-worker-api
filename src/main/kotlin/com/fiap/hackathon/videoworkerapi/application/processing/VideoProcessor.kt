@@ -21,6 +21,8 @@ fun interface ProcessingResultEventIdGenerator {
 	fun generate(): UUID
 }
 
+class TransientVideoProcessingException : RuntimeException("Transient video processing failure")
+
 class DefaultVideoProcessor(
 	private val repository: ProcessingJobRepository,
 	private val storage: VideoStorage,
@@ -32,11 +34,15 @@ class DefaultVideoProcessor(
 ) : VideoProcessor {
 	override fun process(videoId: UUID) {
 		val job = requireNotNull(repository.findByVideoId(videoId)) { "Processing job was not found" }
-		if (job.status != ProcessingJobStatus.RECEIVED) return
+		if (job.isTerminal()) return
 
 		var workspace: Path? = null
 		try {
-			transition(job, VideoProcessingJob::start)
+			if (job.status == ProcessingJobStatus.RECEIVED) {
+				transition(job, VideoProcessingJob::start)
+			} else {
+				transition(job, VideoProcessingJob::retry)
+			}
 			Files.createDirectories(temporaryDirectory)
 			workspace = Files.createTempDirectory(temporaryDirectory, WORKSPACE_PREFIX)
 			val inputFile = workspace.resolve(INPUT_FILENAME)
@@ -68,9 +74,16 @@ class DefaultVideoProcessor(
 				job.complete(outputObjectKey, resultEventIdGenerator.generate(), changedAt)
 			}
 		} catch (exception: Exception) {
-			val reason = failureReason(exception) ?: throw exception
-			job.fail(reason, resultEventIdGenerator.generate(), nextTimestamp(job))
-			repository.save(job)
+			val reason = permanentFailureReason(exception)
+			when {
+				reason != null -> {
+					job.fail(reason, resultEventIdGenerator.generate(), nextTimestamp(job))
+					repository.save(job)
+				}
+
+				isTransient(exception) -> throw TransientVideoProcessingException()
+				else -> throw exception
+			}
 		} finally {
 			workspace?.let(::deleteWorkspace)
 		}
@@ -83,15 +96,17 @@ class DefaultVideoProcessor(
 
 	private fun nextTimestamp(job: VideoProcessingJob): Instant = maxOf(Instant.now(clock), job.updatedAt)
 
-	private fun failureReason(exception: Exception): FailureReason? = when (exception) {
+	private fun permanentFailureReason(exception: Exception): FailureReason? = when (exception) {
 		is StorageObjectNotFoundException -> FailureReason.of("Input video was not found")
-		is StorageUnavailableException -> FailureReason.of("Storage operation failed")
 		is FrameExtractionTimeoutException -> FailureReason.of("Frame extraction timed out")
 		is FrameExtractionException -> FailureReason.of("Frame extraction failed")
-		is FrameArchivingException -> FailureReason.of("Frame compression failed")
-		is IOException -> FailureReason.of("Temporary file operation failed")
 		else -> null
 	}
+
+	private fun isTransient(exception: Exception): Boolean =
+		exception is StorageUnavailableException ||
+			exception is FrameArchivingException ||
+			exception is IOException
 
 	private fun outputObjectKey(job: VideoProcessingJob): ObjectKey = ObjectKey.of(
 		"customers/${job.customerId}/videos/${job.videoId}/output/$ARCHIVE_FILENAME",
