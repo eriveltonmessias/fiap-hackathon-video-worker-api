@@ -1,7 +1,10 @@
 .git
 .gradle
 .idea
-build
+build/*
+!build/libs/
+build/libs/*
+!build/libs/*-SNAPSHOT.jar
 deploy
 docs
 *.iml
