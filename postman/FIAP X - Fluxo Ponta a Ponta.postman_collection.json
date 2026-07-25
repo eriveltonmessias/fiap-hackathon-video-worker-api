@@ -1,0 +1,379 @@
+{
+  "info": {
+    "_postman_id": "609a0310-ef12-46b5-9ffc-6145612fc404",
+    "name": "FIAP X - Fluxo Ponta a Ponta",
+    "description": "Cadastro, autenticacao, upload, processamento assincrono pelos tres projetos e download do ZIP.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    {
+      "key": "authBaseUrl",
+      "value": "http://localhost:8081"
+    },
+    {
+      "key": "managerBaseUrl",
+      "value": "http://localhost:8082"
+    },
+    {
+      "key": "workerBaseUrl",
+      "value": "http://localhost:8083"
+    },
+    {
+      "key": "customerPassword",
+      "value": "StrongPass1"
+    }
+  ],
+  "item": [
+    {
+      "name": "00 - Saude",
+      "item": [
+        {
+          "name": "01 - Customer Auth",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Customer Auth esta disponivel', () => {",
+                  "  pm.response.to.have.status(200);",
+                  "  pm.expect(pm.response.json().status).to.eql('UP');",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "url": "{{authBaseUrl}}/actuator/health"
+          }
+        },
+        {
+          "name": "02 - Video Manager",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Video Manager esta pronto', () => {",
+                  "  pm.response.to.have.status(200);",
+                  "  pm.expect(pm.response.json().status).to.eql('UP');",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "url": "{{managerBaseUrl}}/actuator/health/readiness"
+          }
+        },
+        {
+          "name": "03 - Video Worker",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Video Worker esta pronto', () => {",
+                  "  pm.response.to.have.status(200);",
+                  "  pm.expect(pm.response.json().status).to.eql('UP');",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "url": "{{workerBaseUrl}}/actuator/health/readiness"
+          }
+        }
+      ]
+    },
+    {
+      "name": "01 - Cliente",
+      "item": [
+        {
+          "name": "01 - Cadastrar cliente",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "exec": [
+                  "const suffix = pm.variables.replaceIn('{{$guid}}');",
+                  "pm.collectionVariables.set('customerEmail', `flow-${suffix}@example.com`);"
+                ],
+                "type": "text/javascript"
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Cliente foi criado', () => pm.response.to.have.status(201));",
+                  "const customer = pm.response.json();",
+                  "pm.collectionVariables.set('customerId', customer.id);",
+                  "pm.expect(customer.email).to.eql(pm.collectionVariables.get('customerEmail'));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\"name\":\"Cliente Fluxo E2E\",\"email\":\"{{customerEmail}}\",\"password\":\"{{customerPassword}}\",\"preferredNotificationChannel\":\"EMAIL\"}"
+            },
+            "url": "{{authBaseUrl}}/customers"
+          }
+        },
+        {
+          "name": "02 - Login",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Login retornou JWT', () => pm.response.to.have.status(200));",
+                  "const login = pm.response.json();",
+                  "pm.expect(login.tokenType).to.eql('Bearer');",
+                  "pm.collectionVariables.set('accessToken', login.accessToken);"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\"email\":\"{{customerEmail}}\",\"password\":\"{{customerPassword}}\"}"
+            },
+            "url": "{{authBaseUrl}}/auth/login"
+          }
+        },
+        {
+          "name": "03 - Consultar cliente autenticado",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Token identifica o cliente criado', () => {",
+                  "  pm.response.to.have.status(200);",
+                  "  pm.expect(pm.response.json().id).to.eql(pm.collectionVariables.get('customerId'));",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{accessToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "GET",
+            "url": "{{authBaseUrl}}/customers/{{customerId}}"
+          }
+        }
+      ]
+    },
+    {
+      "name": "02 - Processamento",
+      "item": [
+        {
+          "name": "01 - Upload do video",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Manager aceitou o video', () => pm.response.to.have.status(202));",
+                  "const upload = pm.response.json();",
+                  "pm.expect(upload.status).to.eql('PENDING_PROCESSING');",
+                  "pm.collectionVariables.set('videoId', upload.videoId);",
+                  "pm.collectionVariables.unset('processingPollAttempts');"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{accessToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "POST",
+            "body": {
+              "mode": "formdata",
+              "formdata": [
+                {
+                  "key": "file",
+                  "type": "file",
+                  "src": "assets/sample-video.mp4",
+                  "contentType": "video/mp4"
+                }
+              ]
+            },
+            "url": "{{managerBaseUrl}}/videos"
+          }
+        },
+        {
+          "name": "02 - Aguardar processamento",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.response.to.have.status(200);",
+                  "const video = pm.response.json();",
+                  "if (video.status === 'PROCESSED') {",
+                  "  pm.test('Worker processou e manager confirmou o resultado', () => pm.expect(video.videoId).to.eql(pm.collectionVariables.get('videoId')));",
+                  "  pm.collectionVariables.unset('processingPollAttempts');",
+                  "} else if (video.status === 'FAILED') {",
+                  "  pm.test('Processamento nao falhou', () => pm.expect.fail('Status final FAILED'));",
+                  "} else {",
+                  "  const attempts = Number(pm.collectionVariables.get('processingPollAttempts') || 0) + 1;",
+                  "  pm.collectionVariables.set('processingPollAttempts', attempts);",
+                  "  if (attempts < 60) {",
+                  "    setTimeout(() => {}, 1000);",
+                  "    pm.execution.setNextRequest(pm.info.requestName);",
+                  "  } else {",
+                  "    pm.test('Processamento terminou em ate 60 segundos', () => pm.expect.fail(`Ultimo status: ${video.status}`));",
+                  "  }",
+                  "}"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{accessToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "GET",
+            "url": "{{managerBaseUrl}}/videos/{{videoId}}"
+          }
+        },
+        {
+          "name": "03 - Download do ZIP",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Manager entregou o ZIP gerado pelo worker', () => {",
+                  "  pm.response.to.have.status(200);",
+                  "  pm.expect(pm.response.headers.get('Content-Type')).to.include('zip');",
+                  "  pm.expect(pm.response.responseSize).to.be.above(0);",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{accessToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "GET",
+            "url": "{{managerBaseUrl}}/videos/{{videoId}}/download"
+          }
+        }
+      ]
+    },
+    {
+      "name": "03 - Consultas finais",
+      "item": [
+        {
+          "name": "01 - Listar videos do cliente",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Lista contem o video processado', () => {",
+                  "  pm.response.to.have.status(200);",
+                  "  const ids = pm.response.json().content.map(video => video.videoId);",
+                  "  pm.expect(ids).to.include(pm.collectionVariables.get('videoId'));",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{accessToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "GET",
+            "url": "{{managerBaseUrl}}/videos?page=0&size=20"
+          }
+        },
+        {
+          "name": "02 - Metricas do manager",
+          "request": {
+            "method": "GET",
+            "url": "{{managerBaseUrl}}/actuator/prometheus"
+          }
+        },
+        {
+          "name": "03 - Metricas do worker",
+          "request": {
+            "method": "GET",
+            "url": "{{workerBaseUrl}}/actuator/prometheus"
+          }
+        }
+      ]
+    }
+  ]
+}

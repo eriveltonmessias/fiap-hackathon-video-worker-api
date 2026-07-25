@@ -1,4 +1,25 @@
 services:
+  video-worker:
+    profiles: ["app"]
+    build:
+      context: .
+    container_name: fiapx-video-worker
+    ports:
+      - "8083:8083"
+    environment:
+      MONGODB_URI: mongodb://mongo-worker:27017/video_worker_db
+      KAFKA_BOOTSTRAP_SERVERS: kafka:19092
+      MINIO_ENDPOINT: http://minio:9000
+      MINIO_ACCESS_KEY: fiapx
+      MINIO_SECRET_KEY: fiapx12345
+    depends_on:
+      kafka:
+        condition: service_healthy
+      minio:
+        condition: service_healthy
+      mongo-worker:
+        condition: service_healthy
+
   kafka:
     image: apache/kafka-native:4.0.0
     container_name: fiapx-kafka-worker
@@ -55,9 +76,9 @@ services:
     healthcheck:
       test: ["CMD", "mongosh", "--quiet", "--eval", "db.adminCommand('ping').ok"]
       interval: 10s
-      timeout: 5s
-      retries: 5
-      start_period: 10s
+      timeout: 10s
+      retries: 10
+      start_period: 30s
 
 volumes:
   kafka_data:

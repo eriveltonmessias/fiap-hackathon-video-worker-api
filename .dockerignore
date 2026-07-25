@@ -1,0 +1,12 @@
+.git
+.gradle
+.idea
+build/*
+!build/libs/
+build/libs/*
+!build/libs/*-SNAPSHOT.jar
+deploy
+docs
+*.iml
+*.log
+.DS_Store

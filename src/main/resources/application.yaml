@@ -5,8 +5,9 @@ spring:
     timeout-per-shutdown-phase: ${SHUTDOWN_TIMEOUT:30s}
   data:
     mongodb:
-      uri: ${MONGODB_URI:mongodb://localhost:27017/video_worker_db}
       auto-index-creation: true
+  mongodb:
+    uri: ${MONGODB_URI:mongodb://localhost:27017/video_worker_db}
   kafka:
     bootstrap-servers: ${KAFKA_BOOTSTRAP_SERVERS:localhost:9092}
     consumer:

@@ -1,0 +1,60 @@
+name: Terraform Apply
+
+on:
+  workflow_run:
+    workflows:
+      - CI
+    types:
+      - completed
+    branches:
+      - main
+      - master
+
+permissions:
+  contents: read
+
+concurrency:
+  group: terraform-apply-${{ github.event.workflow_run.head_branch }}
+  cancel-in-progress: false
+
+jobs:
+  apply:
+    if: github.event.workflow_run.conclusion == 'success'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    defaults:
+      run:
+        working-directory: deploy/terraform
+
+    env:
+      TF_VAR_image: ghcr.io/${{ github.repository }}:${{ github.event.workflow_run.head_sha }}
+      TF_VAR_aws_region: ${{ vars.AWS_REGION }}
+      TF_VAR_s3_access_key: ${{ secrets.S3_ACCESS_KEY }}
+      TF_VAR_s3_secret_key: ${{ secrets.S3_SECRET_KEY }}
+      TF_VAR_kubeconfig_path: ${{ runner.temp }}/kubeconfig
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.workflow_run.head_sha }}
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v5
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ vars.AWS_REGION }}
+
+      - name: Update kubeconfig
+        run: aws eks update-kubeconfig --region "${{ vars.AWS_REGION }}" --name "${{ vars.EKS_CLUSTER_NAME }}" --kubeconfig "$TF_VAR_kubeconfig_path"
+
+      - name: Set up Terraform
+        uses: hashicorp/setup-terraform@v3
+
+      - name: Terraform init
+        run: terraform init
+
+      - name: Terraform apply
+        run: terraform apply -auto-approve

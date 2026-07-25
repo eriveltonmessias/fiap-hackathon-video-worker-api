@@ -1,0 +1,4 @@
+image = "ghcr.io/SEU_USUARIO/video-worker-api:<commit-sha>"
+
+s3_access_key = "trocar"
+s3_secret_key = "trocar"
