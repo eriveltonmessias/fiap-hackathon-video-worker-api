@@ -1,14 +1,3 @@
-FROM eclipse-temurin:21-jdk-alpine AS build
-
-WORKDIR /workspace
-
-COPY gradle gradle
-COPY gradlew build.gradle.kts settings.gradle.kts ./
-RUN chmod +x gradlew && ./gradlew dependencies --no-daemon
-
-COPY src src
-RUN ./gradlew bootJar --no-daemon
-
 FROM eclipse-temurin:21-jre-alpine
 
 RUN apk add --no-cache ffmpeg \
@@ -18,7 +7,8 @@ RUN apk add --no-cache ffmpeg \
 	&& chown app:app /tmp/video-worker
 
 WORKDIR /app
-COPY --from=build --chown=app:app /workspace/build/libs/*-SNAPSHOT.jar app.jar
+ARG JAR_FILE=build/libs/*-SNAPSHOT.jar
+COPY --chown=app:app ${JAR_FILE} app.jar
 
 ENV PROCESSING_TEMP_DIRECTORY=/tmp/video-worker
 
