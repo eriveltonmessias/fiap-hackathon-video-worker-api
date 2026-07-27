@@ -9,17 +9,23 @@ on:
     branches:
       - main
       - master
+  workflow_dispatch:
+    inputs:
+      image_tag:
+        description: "Tag da imagem ECR; quando vazio usa o SHA selecionado"
+        required: false
+        type: string
 
 permissions:
   contents: read
 
 concurrency:
-  group: terraform-apply-${{ github.event.workflow_run.head_branch }}
+  group: terraform-apply-${{ github.event.workflow_run.head_branch || github.ref_name }}
   cancel-in-progress: false
 
 jobs:
   apply:
-    if: github.event.workflow_run.conclusion == 'success'
+    if: ${{ github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success' }}
     runs-on: ubuntu-latest
     timeout-minutes: 20
 
@@ -28,8 +34,9 @@ jobs:
         working-directory: deploy/terraform
 
     env:
-      TF_VAR_image: ghcr.io/${{ github.repository }}:${{ github.event.workflow_run.head_sha }}
-      TF_VAR_aws_region: ${{ vars.AWS_REGION }}
+      AWS_REGION: ${{ vars.AWS_REGION || 'us-east-1' }}
+      TF_STATE_BUCKET: ${{ vars.TF_STATE_BUCKET }}
+      TF_VAR_image_tag: ${{ inputs.image_tag || github.event.workflow_run.head_sha || github.sha }}
       TF_VAR_s3_access_key: ${{ secrets.S3_ACCESS_KEY }}
       TF_VAR_s3_secret_key: ${{ secrets.S3_SECRET_KEY }}
 
@@ -37,26 +44,49 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
         with:
-          ref: ${{ github.event.workflow_run.head_sha }}
+          ref: ${{ github.event.workflow_run.head_sha || github.sha }}
 
-      - name: Configure kubeconfig path
-        run: echo "TF_VAR_kubeconfig_path=$RUNNER_TEMP/kubeconfig" >> "$GITHUB_ENV"
+      - name: Validate required secrets
+        run: |
+          for name in TF_VAR_s3_access_key TF_VAR_s3_secret_key; do
+            test -n "${!name}" || {
+              echo "Required secret for $name is missing."
+              exit 1
+            }
+          done
 
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v5
         with:
           aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          aws-region: ${{ vars.AWS_REGION }}
+          aws-region: ${{ env.AWS_REGION }}
 
-      - name: Update kubeconfig
-        run: aws eks update-kubeconfig --region "${{ vars.AWS_REGION }}" --name "${{ vars.EKS_CLUSTER_NAME }}" --kubeconfig "$TF_VAR_kubeconfig_path"
+      - name: Resolve shared backend
+        run: |
+          AWS_ACCOUNT_ID="$(aws sts get-caller-identity --query Account --output text)"
+          if [ -z "$TF_STATE_BUCKET" ]; then
+            TF_STATE_BUCKET="fiap-hackathon-tfstate-${AWS_ACCOUNT_ID}-${AWS_REGION}"
+          fi
+          aws s3api head-bucket --bucket "$TF_STATE_BUCKET"
+          echo "TF_STATE_BUCKET=$TF_STATE_BUCKET" >> "$GITHUB_ENV"
+          echo "TF_VAR_state_bucket=$TF_STATE_BUCKET" >> "$GITHUB_ENV"
+          echo "TF_VAR_aws_region=$AWS_REGION" >> "$GITHUB_ENV"
 
       - name: Set up Terraform
-        uses: hashicorp/setup-terraform@v3
+        uses: hashicorp/setup-terraform@v4
+        with:
+          terraform_version: ">=1.10.0,<2.0.0"
+          terraform_wrapper: false
 
-      - name: Terraform init
-        run: terraform init
-
-      - name: Terraform apply
-        run: terraform apply -auto-approve
+      - run: terraform fmt -check -recursive
+      - run: terraform init -reconfigure -input=false -backend-config="bucket=$TF_STATE_BUCKET"
+      - run: terraform validate
+      - run: terraform plan -input=false -out=tfplan
+      - run: terraform apply -input=false -auto-approve tfplan
+      - name: Validate rollout
+        working-directory: .
+        run: |
+          CLUSTER_NAME="$(terraform -chdir=deploy/terraform output -raw cluster_name)"
+          aws eks update-kubeconfig --region "$AWS_REGION" --name "$CLUSTER_NAME"
+          kubectl rollout status deployment/video-worker-api -n fiap-x-apps --timeout=5m
