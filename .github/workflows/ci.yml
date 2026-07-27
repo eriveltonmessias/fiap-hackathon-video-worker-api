@@ -3,6 +3,7 @@ name: CI
 on:
   push:
   pull_request:
+  workflow_dispatch:
 
 permissions:
   contents: read
@@ -15,6 +16,8 @@ jobs:
   build:
     runs-on: ubuntu-latest
     timeout-minutes: 20
+    env:
+      PUBLISH_IMAGE: ${{ (github.event_name == 'workflow_dispatch' || github.event_name == 'push') && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master') }}
 
     steps:
       - name: Checkout
@@ -34,7 +37,7 @@ jobs:
         run: ./gradlew build --no-daemon
 
       - name: Configure AWS credentials
-        if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master')
+        if: env.PUBLISH_IMAGE == 'true'
         uses: aws-actions/configure-aws-credentials@v5
         with:
           aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
@@ -44,7 +47,7 @@ jobs:
       - name: Set image tag
         id: image
         run: |
-          if [ "$GITHUB_REF" = "refs/heads/main" ] || [ "$GITHUB_REF" = "refs/heads/master" ]; then
+          if [ "$PUBLISH_IMAGE" = "true" ]; then
             AWS_ACCOUNT_ID="$(aws sts get-caller-identity --query Account --output text)"
             IMAGE="${AWS_ACCOUNT_ID}.dkr.ecr.${{ vars.AWS_REGION || 'us-east-1' }}.amazonaws.com/fiapx/video-worker-api:${GITHUB_SHA}"
           else
@@ -61,11 +64,11 @@ jobs:
             -c 'test "$(id -u)" -ne 0 && ffmpeg -version'
 
       - name: Log in to ECR
-        if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master')
+        if: env.PUBLISH_IMAGE == 'true'
         uses: aws-actions/amazon-ecr-login@v2
 
       - name: Check immutable image
-        if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master')
+        if: env.PUBLISH_IMAGE == 'true'
         id: ecr
         run: |
           if aws ecr describe-images --repository-name fiapx/video-worker-api --image-ids "imageTag=$GITHUB_SHA" >/dev/null 2>&1; then
@@ -75,5 +78,5 @@ jobs:
           fi
 
       - name: Push container image
-        if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master') && steps.ecr.outputs.exists != 'true'
+        if: env.PUBLISH_IMAGE == 'true' && steps.ecr.outputs.exists != 'true'
         run: docker push "${{ steps.image.outputs.image }}"

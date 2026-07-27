@@ -9,17 +9,23 @@ on:
     branches:
       - main
       - master
+  workflow_dispatch:
+    inputs:
+      image_tag:
+        description: "Tag da imagem ECR; quando vazio usa o SHA selecionado"
+        required: false
+        type: string
 
 permissions:
   contents: read
 
 concurrency:
-  group: terraform-apply-${{ github.event.workflow_run.head_branch }}
+  group: terraform-apply-${{ github.event.workflow_run.head_branch || github.ref_name }}
   cancel-in-progress: false
 
 jobs:
   apply:
-    if: github.event.workflow_run.conclusion == 'success'
+    if: ${{ github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success' }}
     runs-on: ubuntu-latest
     timeout-minutes: 20
 
@@ -30,7 +36,7 @@ jobs:
     env:
       AWS_REGION: ${{ vars.AWS_REGION || 'us-east-1' }}
       TF_STATE_BUCKET: ${{ vars.TF_STATE_BUCKET }}
-      TF_VAR_image_tag: ${{ github.event.workflow_run.head_sha }}
+      TF_VAR_image_tag: ${{ inputs.image_tag || github.event.workflow_run.head_sha || github.sha }}
       TF_VAR_s3_access_key: ${{ secrets.S3_ACCESS_KEY }}
       TF_VAR_s3_secret_key: ${{ secrets.S3_SECRET_KEY }}
 
@@ -38,7 +44,7 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
         with:
-          ref: ${{ github.event.workflow_run.head_sha }}
+          ref: ${{ github.event.workflow_run.head_sha || github.sha }}
 
       - name: Validate required secrets
         run: |
