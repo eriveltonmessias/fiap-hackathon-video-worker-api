@@ -21,10 +21,12 @@ class ProcessingRequestKafkaListener(
 	@KafkaListener(topics = [VideoProcessingRequested.TOPIC])
 	fun consume(record: ConsumerRecord<String, String>) {
 		val request = parse(record)
-		MDC.putCloseable("videoId", request.videoId.toString()).use {
-			MDC.putCloseable("eventId", request.eventId.toString()).use {
-				if (handler.handle(request) != ProcessingRequestResult.ALREADY_REGISTERED) {
-					videoProcessor.process(request.videoId)
+		MDC.putCloseable("customerId", request.customerId.toString()).use {
+			MDC.putCloseable("videoId", request.videoId.toString()).use {
+				MDC.putCloseable("eventId", request.eventId.toString()).use {
+					if (handler.handle(request) != ProcessingRequestResult.ALREADY_REGISTERED) {
+						videoProcessor.process(request.videoId)
+					}
 				}
 			}
 		}

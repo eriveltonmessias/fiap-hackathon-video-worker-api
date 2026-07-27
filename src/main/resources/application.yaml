@@ -19,6 +19,7 @@ spring:
     listener:
       ack-mode: record
       auto-startup: ${KAFKA_LISTENER_AUTO_STARTUP:true}
+      concurrency: ${KAFKA_LISTENER_CONCURRENCY:3}
       immediate-stop: false
       observation-enabled: true
     admin:
@@ -32,6 +33,13 @@ spring:
         enable.idempotence: true
 
 logging:
+  level:
+    io.micrometer.tracing: WARN
+    io.opentelemetry: WARN
+    org.apache.kafka.clients.admin: WARN
+    org.apache.kafka.common.config.AbstractConfig: WARN
+    org.apache.kafka.common.metrics.Metrics: WARN
+    org.apache.kafka.common.utils.AppInfoParser: WARN
   structured:
     format:
       console: ecs
@@ -69,6 +77,25 @@ server:
   shutdown: graceful
 
 management:
+  logging:
+    export:
+      otlp:
+        enabled: false
+  otlp:
+    metrics:
+      export:
+        enabled: false
+  tracing:
+    sampling:
+      probability: ${TRACING_SAMPLING_PROBABILITY:1.0}
+    export:
+      otlp:
+        enabled: ${OTEL_TRACES_EXPORT_ENABLED:false}
+  opentelemetry:
+    tracing:
+      export:
+        otlp:
+          endpoint: ${OTEL_EXPORTER_OTLP_TRACES_ENDPOINT:http://localhost:4318/v1/traces}
   server:
     port: ${MANAGEMENT_SERVER_PORT:${SERVER_PORT:8083}}
   endpoints:

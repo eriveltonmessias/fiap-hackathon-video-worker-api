@@ -10,3 +10,12 @@ data:
   MINIO_OUTPUT_BUCKET: ${s3_output_bucket_name}
   MONGODB_URI: mongodb://mongo-worker.data-plataform.svc.cluster.local:27017/video_worker_db
   PROCESSING_TEMP_DIRECTORY: /tmp/video-worker
+  KAFKA_LISTENER_CONCURRENCY: "3"
+  OTEL_SERVICE_NAME: video-worker-api
+  OTEL_TRACES_EXPORTER: "otlp"
+  OTEL_TRACES_EXPORT_ENABLED: "true"
+  OTEL_METRICS_EXPORTER: "none"
+  OTEL_LOGS_EXPORTER: "none"
+  OTEL_EXPORTER_OTLP_TRACES_ENDPOINT: "http://jaeger.observability.svc.cluster.local:4318/v1/traces"
+  OTEL_EXPORTER_OTLP_TRACES_PROTOCOL: "http/protobuf"
+  TRACING_SAMPLING_PROBABILITY: "1.0"
