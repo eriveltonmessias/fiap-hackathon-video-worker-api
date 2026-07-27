@@ -70,7 +70,7 @@ spec:
                 - ALL
           volumeMounts:
             - name: processing
-              mountPath: /tmp/video-worker
+              mountPath: /tmp
       volumes:
         - name: processing
           emptyDir:
