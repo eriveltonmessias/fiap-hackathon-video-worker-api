@@ -40,6 +40,15 @@ jobs:
         with:
           ref: ${{ github.event.workflow_run.head_sha }}
 
+      - name: Validate required secrets
+        run: |
+          for name in TF_VAR_s3_access_key TF_VAR_s3_secret_key; do
+            test -n "${!name}" || {
+              echo "Required secret for $name is missing."
+              exit 1
+            }
+          done
+
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v5
         with:
