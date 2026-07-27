@@ -5,6 +5,7 @@ import org.springframework.boot.testcontainers.service.connection.ServiceConnect
 import org.springframework.context.annotation.Bean
 import org.testcontainers.kafka.KafkaContainer
 import org.testcontainers.utility.DockerImageName
+import java.time.Duration
 
 @TestConfiguration(proxyBeanMethods = false)
 class KafkaTestcontainersConfiguration {
@@ -12,4 +13,6 @@ class KafkaTestcontainersConfiguration {
 	@ServiceConnection
 	fun kafkaContainer(): KafkaContainer =
 		KafkaContainer(DockerImageName.parse("apache/kafka-native:4.0.0"))
+			.withStartupTimeout(Duration.ofMinutes(2))
+			.withStartupAttempts(3)
 }
