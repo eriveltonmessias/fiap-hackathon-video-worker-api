@@ -32,13 +32,15 @@ jobs:
       TF_VAR_aws_region: ${{ vars.AWS_REGION }}
       TF_VAR_s3_access_key: ${{ secrets.S3_ACCESS_KEY }}
       TF_VAR_s3_secret_key: ${{ secrets.S3_SECRET_KEY }}
-      TF_VAR_kubeconfig_path: ${{ runner.temp }}/kubeconfig
 
     steps:
       - name: Checkout
         uses: actions/checkout@v4
         with:
           ref: ${{ github.event.workflow_run.head_sha }}
+
+      - name: Configure kubeconfig path
+        run: echo "TF_VAR_kubeconfig_path=$RUNNER_TEMP/kubeconfig" >> "$GITHUB_ENV"
 
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v5
