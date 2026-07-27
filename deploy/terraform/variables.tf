@@ -1,29 +1,13 @@
-variable "kubeconfig_path" {
-  type    = string
-  default = "~/.kube/config"
-}
-
-variable "kubeconfig_context" {
-  type    = string
-  default = ""
-}
-
-variable "apps_namespace" {
-  type    = string
-  default = "fiap-x-apps"
-}
-
 variable "aws_region" {
   type    = string
   default = "us-east-1"
 }
 
-variable "name_prefix" {
-  type    = string
-  default = "fiapx"
+variable "state_bucket" {
+  type = string
 }
 
-variable "image" {
+variable "image_tag" {
   type = string
 }
 
