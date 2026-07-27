@@ -47,5 +47,4 @@ kotlin {
 
 tasks.withType<Test> {
 	useJUnitPlatform()
-	systemProperty("logging.structured.format.console", "")
 }

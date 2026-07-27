@@ -40,9 +40,8 @@ logging:
     org.apache.kafka.common.config.AbstractConfig: WARN
     org.apache.kafka.common.metrics.Metrics: WARN
     org.apache.kafka.common.utils.AppInfoParser: WARN
-  structured:
-    format:
-      console: ecs
+  pattern:
+    console: "%d{yyyy-MM-dd HH:mm:ss.SSS} %-5level [${spring.application.name}] [traceId=%X{traceId:-} spanId=%X{spanId:-}] [%thread] %logger{36} - %msg %kvp%n%wEx"
 
 app:
   kafka:
